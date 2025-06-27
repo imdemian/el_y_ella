@@ -1,7 +1,7 @@
 // src/pages/LogIn/LogIn.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import logo from "../../assets/logoServiHogar.png";
+import logo from "../../assets/logoCuadradoLetras.png";
 import "./LogIn.scss";
 import { toast } from "react-toastify";
 

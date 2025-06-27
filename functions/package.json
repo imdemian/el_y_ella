@@ -2,6 +2,7 @@
   "name": "functions",
   "description": "Cloud Functions for Firebase",
   "scripts": {
+    "seed:categorias": "node scripts/seedCategorias.js",
     "lint": "eslint .",
     "serve": "firebase emulators:start --only functions",
     "shell": "firebase functions:shell",
@@ -9,12 +10,14 @@
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
+  "type": "module",
   "engines": {
     "node": "22"
   },
   "main": "index.js",
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "firebase-admin": "^12.6.0",
     "firebase-functions": "^6.3.2"

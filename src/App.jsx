@@ -3,7 +3,6 @@ import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Routing from "./routers/Routing";
 import LogIn from "./pages/LogIn/LogIn";
-import RegisterTest from "./pages/RegisterTest/RegisterTest";
 import { AuthContext } from "./utils/context";
 import { ToastContainer } from "react-toastify";
 import "./App.scss";
@@ -12,6 +11,7 @@ import { auth } from "./firebase";
 import { onAuthStateChanged } from "firebase/auth";
 // 🚀 IMPORTAR tu servicio que lee el perfil de Firestore:
 import { obtenerUsuario } from "./services/usuariosService";
+import RegisterTest from "./pages/RegsiterTest/RegisterTest";
 
 export default function App() {
   const [user, setUser] = useState(null);

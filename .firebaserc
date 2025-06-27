@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "elyella-d411f"
-  }
+    "default": "elyella-d411f",
+    "elyella": "elyella-d411f"
+  },
+  "targets": {},
+  "etags": {}
 }

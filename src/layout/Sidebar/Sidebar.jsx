@@ -4,12 +4,14 @@ import "./sidebar.scss";
 import {
   faArrowLeft,
   faArrowRight,
+  faBoxesStacked,
   faHome,
   faMoneyBill1,
   faNoteSticky,
   faPeopleGroup,
   faQuestionCircle,
   faScrewdriverWrench,
+  faShop,
   faSignOutAlt,
   faUsers,
   faUserTie,
@@ -38,9 +40,9 @@ const Sidebar = () => {
       route: "/ordenesTrabajo",
       icon: faNoteSticky,
     },
-    { title: "Órdenes Test", route: "/ordenesTest", icon: faNoteSticky },
+    { title: "Productos", route: "/productos", icon: faBoxesStacked },
     { title: "Cotizaciones", route: "/cotizaciones", icon: faMoneyBill1 },
-    { title: "Test", route: "/test", icon: faNoteSticky },
+    { title: "Tiendas", route: "/tiendas", icon: faShop },
   ];
 
   // Items inferiores (solo Salir necesita logout)
