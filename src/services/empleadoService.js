@@ -58,5 +58,6 @@ export async function actualizarEmpleado(id, data) {
  */
 export async function eliminarEmpleado(id) {
   const headers = await authHeaders();
-  await axios.delete(`${BASE}/empleados/${id}`, { headers });
+  const response = await axios.delete(`${BASE}/empleados/${id}`, { headers });
+  return response;
 }

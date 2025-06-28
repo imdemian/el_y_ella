@@ -4,7 +4,7 @@ import { toast } from "react-toastify";
 import { eliminarEmpleado } from "../../services/empleadoService";
 // Asegúrate de que la función eliminarEmpleado esté definida en tu servicio
 
-const EliminarEmpleado = ({ empleado, setShow }) => {
+const EliminarEmpleado = ({ empleado, setShowModal }) => {
   // Inicializamos los datos del empleado que se mostrarán (campos deshabilitados)
   const [formData, setFormData] = useState({
     nombre: empleado?.nombre || "",
@@ -17,8 +17,6 @@ const EliminarEmpleado = ({ empleado, setShow }) => {
   });
   const [errorMsg, setErrorMsg] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  console.log(empleado);
 
   // Actualiza formData si la prop 'empleado' cambia (modo edición)
   useEffect(() => {
@@ -42,11 +40,11 @@ const EliminarEmpleado = ({ empleado, setShow }) => {
     setLoading(true);
     try {
       const response = await eliminarEmpleado(empleado.id);
-      if (response.data && response.data.success) {
+      if (response.status === 200) {
         toast.success("Empleado eliminado con éxito");
-        setShow(false); // Cierra el modal o componente
       }
     } catch (error) {
+      console.log(error);
       const msg =
         error.response?.data?.message ||
         "Error al eliminar el empleado. Inténtalo de nuevo.";
@@ -54,6 +52,7 @@ const EliminarEmpleado = ({ empleado, setShow }) => {
       toast.error(msg);
     } finally {
       setLoading(false);
+      setShowModal(false); // Cierra el modal después de eliminar
     }
   };
 

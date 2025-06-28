@@ -27,7 +27,6 @@ const RegistroEmpleado = ({ empleado, setRefreshCheckLogin, setShowModal }) => {
     const fetchTiendas = async () => {
       try {
         const response = await obtenerTiendas(); // Asegúrate de tener esta función en tu servicio
-        console.log(response);
         setTiendasList(response);
       } catch (error) {
         console.error("Error al cargar las tiendas:", error);
@@ -36,11 +35,22 @@ const RegistroEmpleado = ({ empleado, setRefreshCheckLogin, setShowModal }) => {
     fetchTiendas();
   }, []);
 
-  console.log(tiendasList);
-
   // Actualiza el formData si llega un empleado (modo edición)
   useEffect(() => {
     if (empleado) {
+      let fechaStr = "";
+
+      if (empleado.fechaContratacion?.seconds) {
+        fechaStr = new Date(empleado.fechaContratacion.seconds * 1000)
+          .toISOString()
+          .split("T")[0];
+      } else if (
+        typeof empleado.fechaContratacion === "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(empleado.fechaContratacion)
+      ) {
+        fechaStr = empleado.fechaContratacion;
+      }
+
       setFormData({
         nombre: empleado.nombre || "",
         apellidoPaterno: empleado.apellidoPaterno || "",
@@ -48,7 +58,7 @@ const RegistroEmpleado = ({ empleado, setRefreshCheckLogin, setShowModal }) => {
         telefono: empleado.telefono || "",
         direccion: empleado.direccion || "",
         tiendaId: empleado.tiendaId || "",
-        fechaContratacion: empleado.fechaContratacion || "",
+        fechaContratacion: fechaStr,
       });
     }
   }, [empleado]);
@@ -68,13 +78,13 @@ const RegistroEmpleado = ({ empleado, setRefreshCheckLogin, setShowModal }) => {
       let response;
       if (empleado) {
         // Modo edición: Actualizar el empleado. Se asume que el empleado tiene una propiedad _id.
-        response = await actualizarEmpleado(empleado._id, formData);
+        response = await actualizarEmpleado(empleado.id, formData);
       } else {
         // Modo registro: Crear un nuevo empleado.
         response = await registrarEmpleado(formData);
       }
 
-      if (response.data && response.data.success) {
+      if (response) {
         // Mostrar mensaje de éxito según el modo
         toast.success(
           empleado

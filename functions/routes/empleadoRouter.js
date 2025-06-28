@@ -1,6 +1,6 @@
 // functions/routes/empleadosRouter.js
 import express from "express";
-import { db } from "../admin.js";
+import admin, { db } from "../admin.js";
 
 const router = express.Router();
 const collection = db.collection("empleados");
@@ -14,8 +14,8 @@ router.post("/", async (req, res) => {
       apellidoMaterno = "",
       telefono,
       direccion = "",
-      fechaContratacion = new Date(),
-      ordenesAsignadas = [],
+      tiendaId = "",
+      fechaContratacion,
       estado = "activo",
     } = req.body;
 
@@ -35,22 +35,34 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const now = new Date();
+    // ✅ Crear la fecha en UTC para evitar desfase
+    let fechaContratacionTimestamp = null;
+    if (fechaContratacion) {
+      const [year, month, day] = fechaContratacion.split("-").map(Number);
+      const fechaUtc = new Date(Date.UTC(year, month - 1, day));
+      fechaContratacionTimestamp = admin.firestore.Timestamp.fromDate(fechaUtc);
+    }
+
     const data = {
       nombre,
       apellidoPaterno,
       apellidoMaterno,
       telefono,
       direccion,
-      fechaContratacion: new Date(fechaContratacion),
-      ordenesAsignadas,
+      fechaContratacion: fechaContratacionTimestamp,
+      tiendaId,
       estado,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
     };
 
     const docRef = await collection.add(data);
     const snap = await docRef.get();
+    console.log(
+      "Fecha guardada:",
+      fechaContratacionTimestamp.toDate().toISOString()
+    );
+
     return res.status(201).json({ id: snap.id, ...snap.data() });
   } catch (error) {
     console.error("Error registrando empleado:", error);
@@ -66,7 +78,23 @@ router.post("/", async (req, res) => {
 router.get("/", async (_req, res) => {
   try {
     const snap = await collection.get();
-    const empleados = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const empleados = snap.docs.map((d) => {
+      const data = d.data();
+
+      // Convertir fechaContratacion si existe
+      let fechaStr = "";
+      if (data.fechaContratacion?.seconds) {
+        fechaStr = new Date(data.fechaContratacion.seconds * 1000)
+          .toISOString()
+          .split("T")[0];
+      }
+
+      return {
+        id: d.id,
+        ...data,
+        fechaContratacion: fechaStr,
+      };
+    });
     return res.status(200).json(empleados);
   } catch (error) {
     console.error("Error obteniendo empleados:", error);
