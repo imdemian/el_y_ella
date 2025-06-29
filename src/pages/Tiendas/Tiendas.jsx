@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { eliminarTienda, obtenerTiendas } from "../../services/tiendaService";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { obtenerTiendas } from "../../services/tiendaService";
 import RegistroTiendas from "./RegistroTiendas";
 import DataTable from "react-data-table-component";
 import BasicModal from "../../components/BasicModal/BasicModal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faPenSquare, faTrashCan } from "@fortawesome/free-solid-svg-icons";
+import EliminacionTienda from "./Eliminacion.Tienda";
 
 export default function TiendasScreen() {
   const [tiendas, setTiendas] = useState([]);
@@ -25,11 +26,24 @@ export default function TiendasScreen() {
 
   // Función para abrir el modal para editar una tienda
   const handleEdit = (tienda) => {
-    setContentModal(<RegistroTiendas tienda={tienda} />);
+    setContentModal(<RegistroTiendas tienda={tienda} setShow={setShowModal} />);
     setModalTitle("Editar Tienda");
     setSize("md");
     setShowModal(true);
   };
+
+  // Función para eliminar una tienda
+  const handleDelete = useCallback(
+    (tienda) => {
+      setContentModal(
+        <EliminacionTienda tienda={tienda} setShow={setShowModal} />
+      );
+      setModalTitle("Eliminar Tienda");
+      setSize("md");
+      setShowModal(true);
+    },
+    [setContentModal, setModalTitle, setSize, setShowModal]
+  );
 
   useEffect(() => {
     cargarTiendas();
@@ -49,16 +63,6 @@ export default function TiendasScreen() {
     } catch (error) {
       console.error("Error al cargar tiendas:", error);
       setTiendas([]);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm("¿Seguro que quieres eliminar esta tienda?")) return;
-    try {
-      await eliminarTienda(id);
-      cargarTiendas();
-    } catch (error) {
-      console.error("Error al eliminar tienda:", error);
     }
   };
 
@@ -88,7 +92,7 @@ export default function TiendasScreen() {
             </button>
             <button
               className="btn btn-sm btn-outline-danger"
-              onClick={() => handleDelete(row.id)}
+              onClick={() => handleDelete(row)}
             >
               <FontAwesomeIcon icon={faTrashCan} />
             </button>
