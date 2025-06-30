@@ -32,7 +32,7 @@ const Sidebar = () => {
   // Items principales
   const menuItems = [
     { title: "Inicio", route: "/home", icon: faHome },
-    { title: "Usuarios", route: "/usuarios", icon: faUsers },
+
     { title: "Clientes", route: "/clientes", icon: faPeopleGroup },
     { title: "Empleados", route: "/empleados", icon: faUserTie },
     {
@@ -42,6 +42,7 @@ const Sidebar = () => {
     },
     { title: "Productos", route: "/productos", icon: faBoxesStacked },
     { title: "Cotizaciones", route: "/cotizaciones", icon: faMoneyBill1 },
+    { title: "Usuarios", route: "/usuarios", icon: faUsers },
     { title: "Tiendas", route: "/tiendas", icon: faShop },
   ];
 

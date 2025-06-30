@@ -3,7 +3,8 @@ import Home from "../pages/Home/Home";
 import ProductosScreen from "../pages/Productos/Productos";
 import RegistroProducto from "../pages/Productos/RegistrarProductos";
 import TiendasScreen from "../pages/Tiendas/Tiendas";
-import RegistroUsuarios from "../pages/Usuarios/RegisterUsuarios";
+import RegistroUsuario from "../pages/Usuarios/Registro.Usuario";
+import Usuarios from "../pages/Usuarios/Usuarios";
 
 const configRouting = [
   {
@@ -18,23 +19,28 @@ const configRouting = [
   },
   {
     path: "/registro-usuarios",
-    page: RegistroUsuarios,
+    page: RegistroUsuario,
     roles: ["ADMIN", "MANAGER"],
+  },
+  {
+    path: "/usuarios",
+    page: Usuarios,
+    roles: ["ADMIN"],
   },
   {
     path: "/tiendas",
     page: TiendasScreen,
-    roles: ["ADMIN", "MANAGER"],
+    roles: ["ADMIN"],
   },
   {
     path: "/productos",
     page: ProductosScreen,
-    roles: ["ADMIN", "MANAGER", "TECNICO"],
+    roles: ["ADMIN"],
   },
   {
     path: "/empleados",
     page: Empleados,
-    roles: ["ADMIN", "MANAGER", "TECNICO"],
+    roles: ["ADMIN"],
   },
 ];
 
