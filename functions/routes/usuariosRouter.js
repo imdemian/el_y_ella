@@ -104,7 +104,9 @@ router.delete("/:id", async (req, res) => {
     await admin.auth().deleteUser(req.params.id);
     // 2) Borra del Firestore
     await usuariosCol.doc(req.params.id).delete();
-    return res.json({ success: true, message: "Usuario eliminado" });
+    return res
+      .status(200)
+      .json({ success: true, message: "Usuario eliminado" });
   } catch (error) {
     console.error("Error eliminando usuario:", error);
     return res.status(500).json({ success: false, message: error.message });

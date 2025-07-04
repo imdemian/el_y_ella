@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import BasicModal from "../../components/BasicModal/BasicModal";
 import { obtenerUsuarios } from "../../services/usuariosService";
 import DataTable from "react-data-table-component";
 import RegistroUsuario from "./Registro.Usuario";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faPen, faTrashCan } from "@fortawesome/free-solid-svg-icons";
+import EliminarUsuario from "./Eliminar.Usuario";
 
 const Usuarios = () => {
   const [usuarios, setUsuarios] = useState([]);
@@ -31,6 +32,18 @@ const Usuarios = () => {
     setShowModal(true);
   };
 
+  const handleDelete = useCallback(
+    (usuario) => {
+      setContentModal(
+        <EliminarUsuario usuario={usuario} setShow={setShowModal} />
+      );
+      setModalTitle("Eliminar Usuario");
+      setSize("md");
+      setShowModal(true);
+    },
+    [setContentModal, setModalTitle, setSize, setShowModal]
+  );
+
   useEffect(() => {
     cargarUsuarios();
   }, [showModal]);
@@ -52,54 +65,54 @@ const Usuarios = () => {
     }
   };
 
-  const columns = useMemo(() => [
-    {
-      name: "User",
-      selector: (row) => row.email,
-      sortable: true,
-    },
-    {
-      name: "Nombre",
-      selector: (row) => row.nombre,
-      sortable: true,
-    },
-    {
-      name: "Rol",
-      selector: (row) => row.rol,
-      sortable: true,
-    },
-    {
-      name: "Empleado",
-      selector: (row) => row.empleado?.id || "N/A",
-      sortable: true,
-    },
-    {
-      name: "Acciones",
-      cell: (row) => (
-        <div className="d-flex justify-content-around">
-          <button
-            className="btn btn-sm btn-primary me-2"
-            onClick={() =>
-              handleEdit(
-                <RegistroUsuario usuario={row} setShow={setShowModal} />
-              )
-            }
-          >
-            <FontAwesomeIcon icon={faPen} />
-          </button>
-          <button
-            className="btn btn-sm btn-danger"
-            onClick={() => {
-              // Aquí puedes implementar la lógica para eliminar el usuario
-              console.log("Eliminar usuario:", row);
-            }}
-          >
-            <FontAwesomeIcon icon={faTrashCan} />
-          </button>
-        </div>
-      ),
-    },
-  ]);
+  const columns = useMemo(
+    () => [
+      {
+        name: "User",
+        selector: (row) => row.email,
+        sortable: true,
+      },
+      {
+        name: "Nombre",
+        selector: (row) => row.nombre,
+        sortable: true,
+      },
+      {
+        name: "Rol",
+        selector: (row) => row.rol,
+        sortable: true,
+      },
+      {
+        name: "Empleado",
+        selector: (row) => row.empleado?.id || "N/A",
+        sortable: true,
+      },
+      {
+        name: "Acciones",
+        cell: (row) => (
+          <div className="d-flex justify-content-around">
+            <button
+              className="btn btn-sm btn-primary me-2"
+              onClick={() =>
+                handleEdit(
+                  <RegistroUsuario usuario={row} setShow={setShowModal} />
+                )
+              }
+            >
+              <FontAwesomeIcon icon={faPen} />
+            </button>
+            <button
+              className="btn btn-sm btn-danger"
+              onClick={() => handleDelete(row)}
+            >
+              <FontAwesomeIcon icon={faTrashCan} />
+            </button>
+          </div>
+        ),
+      },
+    ],
+    [handleDelete]
+  );
 
   return (
     <div className="container mt-4">
