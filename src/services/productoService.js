@@ -58,5 +58,6 @@ export async function actualizarProducto(id, data) {
  */
 export async function eliminarProducto(id) {
   const headers = await authHeaders();
-  await axios.delete(`${BASE}/productos/${id}`, { headers });
+  const res = await axios.delete(`${BASE}/productos/${id}`, { headers });
+  return res.data;
 }

@@ -32,7 +32,7 @@ const generarCombinaciones = (variantes, precioBase) => {
  * Componente RegistroProducto
  * @param {{ producto?: object, onSuccess?: () => void }} props
  */
-const RegistroProducto = ({ producto }) => {
+const RegistroProducto = ({ producto, setShow }) => {
   // Campos básicos
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
@@ -173,12 +173,13 @@ const RegistroProducto = ({ producto }) => {
     } catch (err) {
       console.error(err);
       toast.error("Error guardando producto");
+    } finally {
+      setShow(false);
     }
   };
 
   return (
-    <div className="container mt-4">
-      <h2>{producto?.id ? "Editar Producto" : "Registrar Producto"}</h2>
+    <div className="container ">
       <form onSubmit={handleSubmit}>
         {/* Nombre */}
         <div className="mb-3">

@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from "react";
-import {
-  eliminarProducto,
-  obtenerProductos,
-} from "../../services/productoService";
+import { obtenerProductos } from "../../services/productoService";
 import BasicModal from "../../components/BasicModal/BasicModal";
 import RegistroProducto from "./RegistrarProductos";
 import DataTable from "react-data-table-component";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faPen, faTrashCan } from "@fortawesome/free-solid-svg-icons";
 import EditarProducto from "./EditarProducto";
+import EliminarProducto from "./Eliminar.Producto";
 
 export default function ProductosScreen() {
   const [productos, setProductos] = useState([]);
@@ -22,7 +20,7 @@ export default function ProductosScreen() {
   // Función para abrir el modal para registrar un producto
   const registrarProducto = (content) => {
     setContentModal(content);
-    setModalTitle("Registrar Tienda");
+    setModalTitle("Registrar Producto");
     setSize("lg");
     setShowModal(true);
   };
@@ -30,7 +28,7 @@ export default function ProductosScreen() {
   // Función para abrir el modal para editar un producto
   const handleEdit = (content) => {
     setContentModal(content);
-    setModalTitle("Editar Tienda");
+    setModalTitle("Editar Producto");
     setSize("lg");
     setShowModal(true);
   };
@@ -38,6 +36,14 @@ export default function ProductosScreen() {
   useEffect(() => {
     cargarProductos();
   }, [showModal]);
+
+  // Función para eliminar un producto
+  const handleDelete = async (content) => {
+    setContentModal(content);
+    setModalTitle("Eliminar Producto");
+    setSize("md");
+    setShowModal(true);
+  };
 
   const cargarProductos = async () => {
     try {
@@ -56,16 +62,6 @@ export default function ProductosScreen() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("¿Seguro que quieres eliminar esta tienda?")) return;
-    try {
-      await eliminarProducto(id);
-      cargarProductos();
-    } catch (error) {
-      console.error("Error al eliminar tienda:", error);
-    }
-  };
-
   const columns = [
     { name: "Nombre", selector: (row) => row.nombre, sortable: true },
     { name: "Descripción", selector: (row) => row.descripcion, sortable: true },
@@ -77,13 +73,21 @@ export default function ProductosScreen() {
         <div className="d-flex justify-content-between">
           <button
             className=" btn btn-primary btn-sm me-1"
-            onClick={() => handleEdit(<EditarProducto producto={row} />)}
+            onClick={() =>
+              handleEdit(
+                <EditarProducto producto={row} setShow={setShowModal} />
+              )
+            }
           >
             <FontAwesomeIcon icon={faPen} />
           </button>
           <button
             className="btn btn-danger btn-sm"
-            onClick={() => handleDelete(row.id)}
+            onClick={() =>
+              handleDelete(
+                <EliminarProducto producto={row} setShow={setShowModal} />
+              )
+            }
           >
             <FontAwesomeIcon icon={faTrashCan} />
           </button>

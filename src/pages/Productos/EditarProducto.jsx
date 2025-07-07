@@ -40,9 +40,9 @@ const derivarDefiniciones = (combinaciones) => {
 
 /**
  * Componente EditarProducto
- * @param {{ producto?: object, onSuccess?: () => void }} props
+ * @param {{ producto?: object, setShow: (show: boolean) => void }} props
  */
-const EditarProducto = ({ producto, onSuccess }) => {
+const EditarProducto = ({ producto, setShow }) => {
   // Campos básicos
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
@@ -177,16 +177,16 @@ const EditarProducto = ({ producto, onSuccess }) => {
         await crearProducto(payload);
         toast.success("Producto creado");
       }
-      onSuccess?.();
     } catch (err) {
       console.error(err);
       toast.error("Error guardando producto");
+    } finally {
+      setShow(false);
     }
   };
 
   return (
-    <div className="container mt-4">
-      <h2>{producto?.id ? "Editar Producto" : "Registrar Producto"}</h2>
+    <div className="container ">
       <form onSubmit={handleSubmit}>
         {/* Nombre */}
         <div className="mb-3">
