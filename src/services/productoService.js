@@ -36,6 +36,29 @@ export async function obtenerProductos() {
 }
 
 /**
+ * Obtiene lista de productos paginada.
+ * @param {number} limit - Cuántos productos traer
+ * @param {string|null} startAfterId - ID del último producto traído
+ */
+export async function obtenerProductosPaginado(
+  limit = 20,
+  startAfterId = null
+) {
+  const headers = await authHeaders();
+  const params = new URLSearchParams({ limit });
+
+  if (startAfterId) {
+    params.append("startAfter", startAfterId);
+  }
+
+  const res = await axios.get(`${BASE}/productos?${params.toString()}`, {
+    headers,
+  });
+
+  return res.data;
+}
+
+/**
  * Obtiene un producto por su ID.
  */
 export async function obtenerProducto(id) {

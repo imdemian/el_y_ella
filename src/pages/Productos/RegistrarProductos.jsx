@@ -30,7 +30,7 @@ const generarCombinaciones = (variantes, precioBase) => {
 
 /**
  * Componente RegistroProducto
- * @param {{ producto?: object, onSuccess?: () => void }} props
+ * @param {{ producto?: object, onSuccess?: () => void, setShow: (b: boolean) => void }} props
  */
 const RegistroProducto = ({ producto, setShow }) => {
   // Campos básicos
@@ -48,91 +48,113 @@ const RegistroProducto = ({ producto, setShow }) => {
   ]);
   const [combinaciones, setCombinaciones] = useState([]);
 
-  // Carga inicial de categorías y datos para edición
+  // Carga inicial
   useEffect(() => {
-    const fetchCategorias = async () => {
+    (async () => {
       try {
         const cats = await obtenerCategorias();
         setCategorias(cats);
       } catch {
         toast.error("Error al cargar categorías");
       }
-    };
-    fetchCategorias();
 
-    if (producto) {
-      // Prellenar campos
-      setNombre(producto.nombre || "");
-      setDescripcion(producto.descripcion || "");
-      setCategoria(producto.categoria || "");
-      setPrecioBase(producto.precioBase?.toString() || "");
-      setImagenes(producto.imagenes?.length ? producto.imagenes : [""]);
+      if (producto) {
+        setNombre(producto.nombre || "");
+        setDescripcion(producto.descripcion || "");
+        setCategoria(producto.categoria || "");
+        setPrecioBase(producto.precioBase?.toString() || "");
+        setImagenes(producto.imagenes?.length ? producto.imagenes : [""]);
 
-      if (Array.isArray(producto.variantes) && producto.variantes.length) {
-        setTieneVariantes(true);
-        setVariantes(
-          producto.variantes.map((v) => ({
-            atributo: v.atributo || "",
-            opciones:
-              Array.isArray(v.opciones) && v.opciones.length
-                ? v.opciones
-                : [""],
-          }))
-        );
+        if (producto.variantes?.length) {
+          setTieneVariantes(true);
+          setVariantes(
+            producto.variantes.map((v) => ({
+              atributo: v.atributos ? Object.keys(v.atributos)[0] : "",
+              opciones: v.atributos ? [Object.values(v.atributos)[0]] : [""],
+            }))
+          );
+          // Generar combos iniciales con IDs
+          const initCombos = generarCombinaciones(
+            producto.variantes.map((v) => ({
+              atributo: Object.keys(v.atributos)[0],
+              opciones: [Object.values(v.atributos)[0]],
+            })),
+            producto.precioBase
+          ).map((c) => generateVariantId(c, producto));
+          setCombinaciones(initCombos);
+        }
       }
-    }
+    })();
   }, [producto]);
 
-  // Handlers para imágenes
-  const handleImagenChange = (idx, value) => {
+  // Generador de ID según formato
+  const generateVariantId = (combo, prod) => {
+    const catCode = prod.categoria.trim().substring(0, 4).toUpperCase();
+    const nameCode = prod.nombre.trim().toUpperCase().replace(/\s+/g, "_");
+    const colorKey = Object.keys(combo).find(
+      (k) => k.toLowerCase() === "color"
+    );
+    const sizeKey = Object.keys(combo).find((k) => k.toLowerCase() === "talla");
+    const color = colorKey ? combo[colorKey].toUpperCase() : "";
+    const size = sizeKey ? `T${combo[sizeKey].toUpperCase()}` : "";
+    return `${catCode}_${nameCode}_${color}_${size}`;
+  };
+
+  // Handlers imagenes
+  const handleImagenChange = (i, val) => {
     const arr = [...imagenes];
-    arr[idx] = value;
+    arr[i] = val;
     setImagenes(arr);
   };
   const addImagen = () => setImagenes([...imagenes, ""]);
-  const removeImagen = (idx) => {
-    const arr = imagenes.filter((_, i) => i !== idx);
+  const removeImagen = (i) => {
+    const arr = imagenes.filter((_, idx) => idx !== i);
     setImagenes(arr.length ? arr : [""]);
   };
 
-  // Handlers para variantes
-  const handleAtributoChange = (vIdx, value) => {
+  // Handlers variantes
+  const handleAtributoChange = (i, val) => {
     const arr = [...variantes];
-    arr[vIdx].atributo = value;
+    arr[i].atributo = val;
     setVariantes(arr);
   };
-  const handleOpcionChange = (vIdx, oIdx, value) => {
+  const handleOpcionChange = (i, j, val) => {
     const arr = [...variantes];
-    arr[vIdx].opciones[oIdx] = value;
+    arr[i].opciones[j] = val;
     setVariantes(arr);
   };
-  const addOpcion = (vIdx) => {
+  const addOpcion = (i) => {
     const arr = [...variantes];
-    arr[vIdx].opciones.push("");
+    arr[i].opciones.push("");
     setVariantes(arr);
   };
-  const removeOpcion = (vIdx, oIdx) => {
+  const removeOpcion = (i, j) => {
     const arr = [...variantes];
-    arr[vIdx].opciones = arr[vIdx].opciones.filter((_, i) => i !== oIdx);
-    if (!arr[vIdx].opciones.length) arr[vIdx].opciones = [""];
+    arr[i].opciones = arr[i].opciones.filter((_, idx) => idx !== j);
+    if (!arr[i].opciones.length) arr[i].opciones = [""];
     setVariantes(arr);
   };
   const addVariante = () =>
     setVariantes([...variantes, { atributo: "", opciones: [""] }]);
-  const removeVariante = (vIdx) => {
-    const arr = variantes.filter((_, i) => i !== vIdx);
+  const removeVariante = (i) => {
+    const arr = variantes.filter((_, idx) => idx !== i);
     setVariantes(arr.length ? arr : [{ atributo: "", opciones: [""] }]);
   };
 
-  // Generar combinaciones y permitir editar precio
+  // Generar combos y asignar ID
   const handleGenerarCombos = () => {
     const base = parseFloat(precioBase) || 0;
-    const combos = generarCombinaciones(variantes, base);
-    setCombinaciones(combos);
+    const raw = generarCombinaciones(variantes, base);
+    const withId = raw.map((c) => ({
+      id: generateVariantId(c, { nombre, categoria }),
+      ...c,
+    }));
+    setCombinaciones(withId);
   };
-  const handlePrecioComboChange = (idx, value) => {
+
+  const handlePrecioComboChange = (idx, val) => {
     const arr = [...combinaciones];
-    arr[idx].precio = parseFloat(value) || 0;
+    arr[idx].precio = parseFloat(val) || 0;
     setCombinaciones(arr);
   };
 
@@ -149,16 +171,14 @@ const RegistroProducto = ({ producto, setShow }) => {
       categoria,
       precioBase: parseFloat(precioBase),
       imagenes: imagenes.filter((u) => u.trim()),
-      tieneVariantes: tieneVariantes,
+      tieneVariantes,
       variantes: tieneVariantes
         ? combinaciones.map((c) => ({
             atributos: Object.keys(c)
-              .filter((k) => k !== "precio")
-              .reduce((obj, k) => {
-                obj[k] = c[k];
-                return obj;
-              }, {}),
+              .filter((k) => "precio" !== k)
+              .reduce((o, k) => ({ ...o, [k]: c[k] }), {}),
             precio: c.precio,
+            id: c.id,
           }))
         : [],
     };

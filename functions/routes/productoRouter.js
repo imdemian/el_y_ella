@@ -54,14 +54,27 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Listar todos los productos
-router.get("/", async (_req, res) => {
+// Listar productos con paginación
+router.get("/", async (req, res) => {
   try {
-    const snap = await productsCol.get();
+    const limit = parseInt(req.query.limit || "20");
+    const startAfterId = req.query.startAfter || null;
+
+    let query = productsCol.orderBy("nombre").limit(limit);
+
+    if (startAfterId) {
+      const startDoc = await productsCol.doc(startAfterId).get();
+      if (startDoc.exists) {
+        query = query.startAfter(startDoc);
+      }
+    }
+
+    const snap = await query.get();
     const products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    return res.status(200).json(products);
+
+    return res.status(200).json({ productos: products });
   } catch (error) {
-    console.error("Error obteniendo productos:", error);
+    console.error("Error paginando productos:", error);
     return res.status(500).json({
       success: false,
       message: "Error al obtener productos",

@@ -2,6 +2,8 @@ import Empleados from "../pages/Empleados/Empleados";
 import Home from "../pages/Home/Home";
 import ProductosScreen from "../pages/Productos/Productos";
 import RegistroProducto from "../pages/Productos/RegistrarProductos";
+import Inventario from "../pages/Tiendas/Inventario/Inventario";
+import InventarioTest from "../pages/Tiendas/Inventario/Inventario.Test";
 import TiendasScreen from "../pages/Tiendas/Tiendas";
 import RegistroUsuario from "../pages/Usuarios/Registro.Usuario";
 import Usuarios from "../pages/Usuarios/Usuarios";
@@ -31,6 +33,16 @@ const configRouting = [
     path: "/tiendas",
     page: TiendasScreen,
     roles: ["ADMIN"],
+  },
+  {
+    path: "/tiendas/:tiendaId/inventario",
+    page: Inventario,
+    roles: ["ADMIN", "MANAGER"],
+  },
+  {
+    path: "/tiendas/:tiendaId/inventarioTest",
+    page: InventarioTest,
+    roles: ["ADMIN", "MANAGER"],
   },
   {
     path: "/productos",
