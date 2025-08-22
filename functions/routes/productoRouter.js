@@ -2,7 +2,7 @@ import express from "express";
 import { db } from "../admin.js";
 
 const router = express.Router();
-const productsCol = db.collection("products");
+const productsCol = db.collection("productos");
 
 // Crear producto
 router.post("/", async (req, res) => {
@@ -57,29 +57,30 @@ router.post("/", async (req, res) => {
 // Listar productos con paginación
 router.get("/", async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit || "20");
+    const limit = Number(req.query.limit || 20);
     const startAfterId = req.query.startAfter || null;
+    const productosCol = db.collection("productos");
 
-    let query = productsCol.orderBy("nombre").limit(limit);
+    // orden estable (elige tu campo)
+    let ref = productosCol.orderBy("createdAt", "desc");
 
     if (startAfterId) {
-      const startDoc = await productsCol.doc(startAfterId).get();
-      if (startDoc.exists) {
-        query = query.startAfter(startDoc);
+      const lastSnap = await productosCol.doc(startAfterId).get();
+      if (lastSnap.exists) {
+        ref = ref.startAfter(lastSnap);
       }
     }
 
-    const snap = await query.get();
-    const products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const snap = await ref.limit(limit).get();
+    const productos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const nextStartAfter = snap.docs.length
+      ? snap.docs[snap.docs.length - 1].id
+      : null;
 
-    return res.status(200).json({ productos: products });
-  } catch (error) {
-    console.error("Error paginando productos:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al obtener productos",
-      error: error.message,
-    });
+    res.json({ success: true, productos, nextStartAfter });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: e.message });
   }
 });
 
