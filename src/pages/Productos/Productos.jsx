@@ -123,7 +123,7 @@ export default function ProductosScreen() {
   const handleEdit = useCallback(
     (row) => {
       setContentModal(
-        <EditarProducto
+        <RegistroProducto
           producto={row}
           setShow={handleModalVisibility}
           onSaved={closeModal}

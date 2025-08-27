@@ -6,7 +6,45 @@ import {
 import { obtenerCategorias } from "../../services/categoriaService";
 import { toast } from "react-toastify";
 
-// Función para generar combinaciones (producto cartesiano)
+// ---------- Utils ----------
+const ATTR_EXCLUDE = new Set(["id", "sku", "barcode", "precio"]);
+
+const keyOf = (combo) => {
+  const attrs = Object.entries(combo)
+    .filter(([k]) => !ATTR_EXCLUDE.has(k))
+    .map(([k, v]) => [String(k), String(v)]);
+  // ordena para tener una llave determinística
+  attrs.sort(([a], [b]) => a.localeCompare(b));
+  return JSON.stringify(attrs);
+};
+
+const genId = () =>
+  `VAR_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 7)
+    .toUpperCase()}`;
+
+// Genera un SKU legible a partir de nombre/categoría y atributos
+const buildSku = (categoriaNombre, nombreProd, combo) => {
+  const obj = Object.fromEntries(
+    Object.entries(combo).filter(([k]) => !ATTR_EXCLUDE.has(k))
+  );
+
+  const colorKey = Object.keys(obj).find((k) => k.toLowerCase() === "color");
+  const tallaKey = Object.keys(obj).find((k) => k.toLowerCase() === "talla");
+
+  const cat = (categoriaNombre || "").toString().slice(0, 4).toUpperCase();
+  const name = (nombreProd || "").trim().toUpperCase().replace(/\s+/g, "_");
+  const color = colorKey ? String(obj[colorKey]).toUpperCase() : "";
+  const talla = tallaKey ? `T${String(obj[tallaKey]).toUpperCase()}` : "";
+
+  return [cat, name, color, talla]
+    .filter(Boolean)
+    .join("_")
+    .replace(/_+/g, "_");
+};
+
+// Función para generar producto cartesiano de combinaciones
 const generarCombinaciones = (variantes, precioBase) => {
   let combos = [{}];
   variantes.forEach(({ atributo, opciones }) => {
@@ -30,18 +68,22 @@ const generarCombinaciones = (variantes, precioBase) => {
 
 /**
  * Componente RegistroProducto
- * @param {{ producto?: object, onSuccess?: () => void, setShow: (b: boolean) => void }} props
+ * - IDs de variante ESTABLES
+ * - SKU legible
+ * - barcode por variante
+ * - categoriaId + categoria (nombre)
  */
 const RegistroProducto = ({ producto, setShow }) => {
-  // Campos básicos
+  // Básicos
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [categorias, setCategorias] = useState([]);
-  const [categoria, setCategoria] = useState("");
+  const [categoriaId, setCategoriaId] = useState(""); // id
+  const [categoria, setCategoria] = useState(""); // nombre
   const [precioBase, setPrecioBase] = useState("");
   const [imagenes, setImagenes] = useState([""]);
 
-  // Variantes
+  // Variantes (definición) y combinaciones (instancias)
   const [tieneVariantes, setTieneVariantes] = useState(false);
   const [variantes, setVariantes] = useState([
     { atributo: "", opciones: [""] },
@@ -53,7 +95,7 @@ const RegistroProducto = ({ producto, setShow }) => {
     (async () => {
       try {
         const cats = await obtenerCategorias();
-        setCategorias(cats);
+        setCategorias(cats || []);
       } catch {
         toast.error("Error al cargar categorías");
       }
@@ -61,46 +103,49 @@ const RegistroProducto = ({ producto, setShow }) => {
       if (producto) {
         setNombre(producto.nombre || "");
         setDescripcion(producto.descripcion || "");
+        // si backend guardó categoriaId y categoria (nombre)
+        setCategoriaId(producto.categoriaId || "");
         setCategoria(producto.categoria || "");
-        setPrecioBase(producto.precioBase?.toString() || "");
+
+        setPrecioBase(
+          producto.precioBase != null ? String(producto.precioBase) : ""
+        );
         setImagenes(producto.imagenes?.length ? producto.imagenes : [""]);
 
         if (producto.variantes?.length) {
           setTieneVariantes(true);
+
+          // Reconstruye "schema" de atributos a partir de todas las variantes
+          const schema = {};
+          for (const v of producto.variantes) {
+            Object.entries(v.atributos || {}).forEach(([k, val]) => {
+              const key = String(k).trim();
+              schema[key] = schema[key] || new Set();
+              schema[key].add(String(val).trim());
+            });
+          }
           setVariantes(
-            producto.variantes.map((v) => ({
-              atributo: v.atributos ? Object.keys(v.atributos)[0] : "",
-              opciones: v.atributos ? [Object.values(v.atributos)[0]] : [""],
+            Object.entries(schema).map(([atributo, set]) => ({
+              atributo,
+              opciones: Array.from(set),
             }))
           );
-          // Generar combos iniciales con IDs
-          const initCombos = generarCombinaciones(
-            producto.variantes.map((v) => ({
-              atributo: Object.keys(v.atributos)[0],
-              opciones: [Object.values(v.atributos)[0]],
-            })),
-            producto.precioBase
-          ).map((c) => generateVariantId(c, producto));
+
+          // Combos preservando id, precio, sku, barcode
+          const initCombos = producto.variantes.map((v) => ({
+            id: v.id, // estable
+            ...v.atributos, // atributos (Color/Talla/etc.)
+            precio: v.precio ?? producto.precioBase,
+            sku: v.sku || "",
+            barcode: v.barcode || "",
+          }));
           setCombinaciones(initCombos);
         }
       }
     })();
   }, [producto]);
 
-  // Generador de ID según formato
-  const generateVariantId = (combo, prod) => {
-    const catCode = prod.categoria.trim().substring(0, 4).toUpperCase();
-    const nameCode = prod.nombre.trim().toUpperCase().replace(/\s+/g, "_");
-    const colorKey = Object.keys(combo).find(
-      (k) => k.toLowerCase() === "color"
-    );
-    const sizeKey = Object.keys(combo).find((k) => k.toLowerCase() === "talla");
-    const color = colorKey ? combo[colorKey].toUpperCase() : "";
-    const size = sizeKey ? `T${combo[sizeKey].toUpperCase()}` : "";
-    return `${catCode}_${nameCode}_${color}_${size}`;
-  };
-
-  // Handlers imagenes
+  // ---------- Handlers imágenes ----------
   const handleImagenChange = (i, val) => {
     const arr = [...imagenes];
     arr[i] = val;
@@ -112,7 +157,7 @@ const RegistroProducto = ({ producto, setShow }) => {
     setImagenes(arr.length ? arr : [""]);
   };
 
-  // Handlers variantes
+  // ---------- Handlers variantes (definición) ----------
   const handleAtributoChange = (i, val) => {
     const arr = [...variantes];
     arr[i].atributo = val;
@@ -141,14 +186,27 @@ const RegistroProducto = ({ producto, setShow }) => {
     setVariantes(arr.length ? arr : [{ atributo: "", opciones: [""] }]);
   };
 
-  // Generar combos y asignar ID
+  // ---------- Generar combos preservando IDs/valores previos ----------
   const handleGenerarCombos = () => {
     const base = parseFloat(precioBase) || 0;
     const raw = generarCombinaciones(variantes, base);
-    const withId = raw.map((c) => ({
-      id: generateVariantId(c, { nombre, categoria }),
-      ...c,
-    }));
+
+    // Indexa combos previos por su "key" (sin precio/id/sku/barcode)
+    const prevByKey = new Map(combinaciones.map((c) => [keyOf(c), c]));
+
+    const withId = raw.map((c) => {
+      const k = keyOf(c);
+      const prev = prevByKey.get(k);
+      const next = {
+        id: prev?.id || genId(), // ID estable
+        ...c, // atributos + precio base por generarCombinaciones
+        precio: prev?.precio ?? c.precio ?? base, // preserva precio si existía
+        sku: buildSku(categoria, nombre, prev || c), // SKU legible
+        barcode: prev?.barcode || "", // preserva barcode si existía
+      };
+      return next;
+    });
+
     setCombinaciones(withId);
   };
 
@@ -158,30 +216,54 @@ const RegistroProducto = ({ producto, setShow }) => {
     setCombinaciones(arr);
   };
 
-  // Submit
+  const handleComboChange = (idx, patch) => {
+    setCombinaciones((prev) => {
+      const arr = [...prev];
+      arr[idx] = { ...arr[idx], ...patch };
+      return arr;
+    });
+  };
+
+  // ---------- Submit ----------
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!nombre.trim() || !precioBase.trim() || !categoria) {
+    if (!nombre.trim() || !precioBase.trim() || !categoriaId) {
       toast.error("Completa Nombre, Precio y Categoría");
       return;
     }
+
+    // Validación simple: combos duplicados por atributos
+    const keys = new Set();
+    for (const c of combinaciones) {
+      const k = keyOf(c);
+      if (keys.has(k)) {
+        toast.error("Hay combinaciones duplicadas de variantes.");
+        return;
+      }
+      keys.add(k);
+    }
+
     const payload = {
       nombre: nombre.trim(),
       descripcion: descripcion.trim(),
-      categoria,
+      categoria, // nombre (para mostrar/búsquedas)
+      categoriaId: categoriaId || null, // id (para relaciones)
       precioBase: parseFloat(precioBase),
       imagenes: imagenes.filter((u) => u.trim()),
       tieneVariantes,
       variantes: tieneVariantes
         ? combinaciones.map((c) => ({
-            atributos: Object.keys(c)
-              .filter((k) => "precio" !== k)
-              .reduce((o, k) => ({ ...o, [k]: c[k] }), {}),
+            id: c.id, // estable
+            sku: c.sku || null,
+            barcode: c.barcode || null,
             precio: c.precio,
-            id: c.id,
+            atributos: Object.fromEntries(
+              Object.entries(c).filter(([k]) => !ATTR_EXCLUDE.has(k))
+            ),
           }))
         : [],
     };
+
     try {
       if (producto?.id) {
         await actualizarProducto(producto.id, payload);
@@ -190,11 +272,10 @@ const RegistroProducto = ({ producto, setShow }) => {
         await crearProducto(payload);
         toast.success("Producto creado");
       }
+      setShow(false);
     } catch (err) {
       console.error(err);
       toast.error("Error guardando producto");
-    } finally {
-      setShow(false);
     }
   };
 
@@ -212,6 +293,7 @@ const RegistroProducto = ({ producto, setShow }) => {
             required
           />
         </div>
+
         {/* Descripción */}
         <div className="mb-3">
           <label className="form-label">Descripción</label>
@@ -222,13 +304,19 @@ const RegistroProducto = ({ producto, setShow }) => {
             rows={3}
           />
         </div>
-        {/* Categoría */}
+
+        {/* Categoría (id + nombre) */}
         <div className="mb-3">
           <label className="form-label">Categoría *</label>
           <select
             className="form-select"
-            value={categoria}
-            onChange={(e) => setCategoria(e.target.value)}
+            value={categoriaId}
+            onChange={(e) => {
+              const id = e.target.value;
+              setCategoriaId(id);
+              const cat = categorias.find((c) => c.id === id);
+              setCategoria(cat?.nombre || "");
+            }}
             required
           >
             <option value="">— Selecciona —</option>
@@ -239,6 +327,7 @@ const RegistroProducto = ({ producto, setShow }) => {
             ))}
           </select>
         </div>
+
         {/* Precio Base */}
         <div className="mb-3">
           <label className="form-label">Precio Base *</label>
@@ -252,6 +341,7 @@ const RegistroProducto = ({ producto, setShow }) => {
             required
           />
         </div>
+
         {/* Imágenes */}
         <div className="mb-3">
           <label className="form-label">Imágenes</label>
@@ -281,6 +371,7 @@ const RegistroProducto = ({ producto, setShow }) => {
             + Imagen
           </button>
         </div>
+
         {/* Variantes */}
         <div className="form-check mb-3">
           <input
@@ -294,6 +385,7 @@ const RegistroProducto = ({ producto, setShow }) => {
             ¿Tiene variantes?
           </label>
         </div>
+
         {tieneVariantes && (
           <div className="mb-3 border p-3 rounded">
             <h5 className="mb-3">Variantes</h5>
@@ -354,32 +446,58 @@ const RegistroProducto = ({ producto, setShow }) => {
               className="btn btn-secondary"
               type="button"
               onClick={handleGenerarCombos}
+              disabled={
+                !precioBase ||
+                !variantes.some(
+                  (v) => v.atributo.trim() && v.opciones.some((o) => o.trim())
+                )
+              }
             >
               Generar Combinaciones
             </button>
           </div>
         )}
-        {/* Tabla de combinaciones con edición de precio */}
-        {combinaciones.length > 0 && (
+
+        {/* Tabla de combinaciones con edición de precio y barcode */}
+        {tieneVariantes && combinaciones.length > 0 && (
           <div className="table-responsive mb-3">
-            <table className="table table-bordered">
+            <table className="table table-bordered align-middle">
               <thead>
                 <tr>
-                  {Object.keys(combinaciones[0])
-                    .filter((k) => "precio" !== k)
-                    .map((k) => (
-                      <th key={k}>{k}</th>
-                    ))}
+                  {/* Atributos dinámicos */}
+                  {Object.keys(
+                    Object.fromEntries(
+                      Object.entries(combinaciones[0]).filter(
+                        ([k]) => !ATTR_EXCLUDE.has(k)
+                      )
+                    )
+                  ).map((k) => (
+                    <th key={k}>{k}</th>
+                  ))}
+                  <th>SKU</th>
                   <th>Precio</th>
+                  <th>Barcode</th>
                 </tr>
               </thead>
               <tbody>
                 {combinaciones.map((c, idx) => (
-                  <tr key={idx}>
-                    {Object.entries(c).map(
-                      ([k, v]) => k !== "precio" && <td key={k}>{v}</td>
-                    )}
+                  <tr key={c.id}>
+                    {Object.entries(c)
+                      .filter(([k]) => !ATTR_EXCLUDE.has(k))
+                      .map(([k, v]) => (
+                        <td key={k}>{String(v)}</td>
+                      ))}
                     <td>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={c.sku || ""}
+                        onChange={(e) =>
+                          handleComboChange(idx, { sku: e.target.value })
+                        }
+                      />
+                    </td>
+                    <td style={{ width: 140 }}>
                       <input
                         type="number"
                         className="form-control"
@@ -391,12 +509,24 @@ const RegistroProducto = ({ producto, setShow }) => {
                         }
                       />
                     </td>
+                    <td style={{ width: 220 }}>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Ej. CODE128"
+                        value={c.barcode || ""}
+                        onChange={(e) =>
+                          handleComboChange(idx, { barcode: e.target.value })
+                        }
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
+
         {/* Botón guardar */}
         <button type="submit" className="btn btn-primary w-100">
           {producto?.id ? "Actualizar Producto" : "Guardar Producto"}

@@ -8,7 +8,7 @@ export default function EliminarProducto({ producto, setShow }) {
   const [formData, setFormData] = useState({
     nombre: producto?.nombre || "",
     descripcion: producto?.descripcion || "",
-    precio: producto?.precio || "",
+    precio: producto?.precioBase || "",
     categoria: producto?.categoria || "",
     imagen: producto?.imagen || "",
   });
