@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   obtenerInventarioTienda,
@@ -7,16 +7,18 @@ import {
   obtenerLogsInventarioTienda,
 } from "../../../services/tiendaService";
 import { obtenerProductosPaginado } from "../../../services/productoService";
-import { toast } from "react-toastify";
 import { obtenerCategorias } from "../../../services/categoriaService";
+import { toast } from "react-toastify";
 
 export default function Inventario() {
   const cargadoRef = useRef(false);
   const { tiendaId } = useParams();
+
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [lastProductoId, setLastProductoId] = useState(null);
   const [hasMoreProductos, setHasMoreProductos] = useState(true);
+
   const [inventario, setInventario] = useState([]);
   const [logs, setLogs] = useState([]);
   const [selectedProd, setSelectedProd] = useState(null);
@@ -27,47 +29,87 @@ export default function Inventario() {
   const [filtroTalla, setFiltroTalla] = useState("");
   const [filtroColor, setFiltroColor] = useState("");
 
+  const [loadingProds, setLoadingProds] = useState(false);
+  const [loadingInv, setLoadingInv] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+
   const PRODUCTOS_PAGINA = 20;
 
+  // Helpers
+  const toStr = (v) => (v == null ? "" : String(v));
+  const getAttr = (variant, key) => {
+    if (!variant) return "";
+    const direct = variant[key];
+    const fromAttrs =
+      variant.atributos &&
+      (variant.atributos[key] ??
+        variant.atributos[key?.charAt(0).toUpperCase() + key?.slice(1)]);
+    return toStr(fromAttrs ?? direct ?? "");
+  };
+
   const cargarProductos = async () => {
+    if (loadingProds || !hasMoreProductos) return;
+    setLoadingProds(true);
     try {
       const nuevos = await obtenerProductosPaginado(
         PRODUCTOS_PAGINA,
         lastProductoId
       );
-      if (!Array.isArray(nuevos.productos))
+      if (!nuevos || !Array.isArray(nuevos.productos)) {
         throw new Error("Respuesta inesperada: productos no es un array");
-
+      }
       if (nuevos.productos.length < PRODUCTOS_PAGINA)
         setHasMoreProductos(false);
-      if (nuevos.productos.length > 0)
+      if (nuevos.productos.length > 0) {
         setLastProductoId(nuevos.productos[nuevos.productos.length - 1].id);
-      setProductos((prev) => [...prev, ...nuevos.productos]);
-      const resCategorias = await obtenerCategorias();
-      setCategorias(resCategorias);
+        setProductos((prev) => [...prev, ...nuevos.productos]);
+      }
     } catch (err) {
       console.error(err);
       toast.error("Error cargando productos");
+    } finally {
+      setLoadingProds(false);
     }
   };
 
+  // Carga inicial de productos (paginado) una sola vez
   useEffect(() => {
     if (cargadoRef.current) return;
     cargadoRef.current = true;
     cargarProductos();
+  }, []); // eslint-disable-line
+
+  // Cargar categorías sólo una vez
+  useEffect(() => {
+    (async () => {
+      try {
+        const resCategorias = await obtenerCategorias();
+        setCategorias(Array.isArray(resCategorias) ? resCategorias : []);
+      } catch (err) {
+        console.error(err);
+        toast.error("Error cargando categorías");
+      }
+    })();
   }, []);
 
   const handleProdChange = async (e) => {
-    const prod = productos.find((p) => p.id === e.target.value) || null;
+    const prodId = e.target.value;
+    const prod = productos.find((p) => p.id === prodId) || null;
     setSelectedProd(prod);
+    setValoresInventario({});
+    setInventario([]);
+    setLogs([]);
+
     if (!prod) return;
 
+    setLoadingInv(true);
     try {
       const inv = await obtenerInventarioTienda(tiendaId, prod.id);
-      setInventario(inv);
+      setInventario(Array.isArray(inv) ? inv : []);
 
+      // prellenar por variante
       const nuevosValores = {};
-      prod.variantes.forEach((v) => {
+      (prod.variantes || []).forEach((v) => {
         const invRec = inv.find((i) => i.varianteId === v.id);
         nuevosValores[v.id] = {
           stock: invRec?.stock || 0,
@@ -78,80 +120,137 @@ export default function Inventario() {
       setValoresInventario(nuevosValores);
 
       const hist = await obtenerLogsInventarioTienda(tiendaId);
-      setLogs(hist);
+      setLogs(Array.isArray(hist) ? hist : []);
     } catch (err) {
       console.error(err);
       toast.error("Error cargando inventario del producto");
+    } finally {
+      setLoadingInv(false);
     }
   };
 
   const handleGuardarVariante = async (varianteId) => {
+    if (!selectedProd) return;
     const valores = valoresInventario[varianteId];
-    const v = selectedProd.variantes.find((v) => v.id === varianteId);
+    const v = (selectedProd.variantes || []).find((vx) => vx.id === varianteId);
+    if (!v || !valores) return;
+
     const existente = valores.inventarioId;
+    if ((valores.stock ?? 0) < 0 || (valores.minimo ?? 0) < 0) {
+      toast.error("Los valores no pueden ser negativos");
+      return;
+    }
 
-    try {
-      if (existente) {
-        await actualizarInventarioTienda(tiendaId, existente, {
-          stock: valores.stock,
-          minimoStock: valores.minimo,
-        });
-      } else {
-        await agregarInventarioTienda(tiendaId, {
-          productoId: selectedProd.id,
-          varianteId: v.id,
-          cantidad: valores.stock,
-          minimoStock: valores.minimo,
-        });
-      }
-
-      handleProdChange({ target: { value: selectedProd.id } });
-    } catch (err) {
-      console.error(err);
-      toast.error("Error guardando inventario");
+    if (existente) {
+      await actualizarInventarioTienda(tiendaId, existente, {
+        stock: valores.stock,
+        minimoStock: valores.minimo,
+      });
+    } else {
+      await agregarInventarioTienda(tiendaId, {
+        productoId: selectedProd.id,
+        varianteId: v.id,
+        cantidad: valores.stock,
+        minimoStock: valores.minimo,
+      });
     }
   };
 
   const handleGuardarTodo = async () => {
-    const variantesConDatos = selectedProd.variantes.filter((v) => {
+    if (!selectedProd) return;
+    const variantesConDatos = (selectedProd.variantes || []).filter((v) => {
       const val = valoresInventario[v.id];
-      return val && (val.stock > 0 || val.minimo > 0);
+      return (
+        val &&
+        (Number(val.stock) > 0 || Number(val.minimo) > 0 || val.inventarioId)
+      );
     });
 
-    for (const v of variantesConDatos) {
-      await handleGuardarVariante(v.id);
+    if (variantesConDatos.length === 0) {
+      toast.info("No hay cambios para guardar");
+      return;
     }
 
-    toast.success("Inventario guardado correctamente");
+    setSavingAll(true);
+    try {
+      const ops = variantesConDatos.map((v) => handleGuardarVariante(v.id));
+      const res = await Promise.allSettled(ops);
+      const ok = res.filter((r) => r.status === "fulfilled").length;
+      const fail = res.length - ok;
+
+      // refrescar inventario del producto seleccionado
+      await handleProdChange({ target: { value: selectedProd.id } });
+
+      if (fail === 0) {
+        toast.success(`Se guardaron ${ok} variantes correctamente`);
+      } else {
+        toast.warn(`OK: ${ok}, Fallas: ${fail}. Revisa la consola/logs.`);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al guardar el inventario");
+    } finally {
+      setSavingAll(false);
+    }
   };
 
-  // Filtro avanzado
-  const productosFiltrados = productos.filter((p) => {
-    const texto = filtroTexto.toLowerCase();
+  // Filtro avanzado (memo para evitar recomputar)
+  const productosFiltrados = useMemo(() => {
+    const texto = toStr(filtroTexto).toLowerCase();
+    const cat = toStr(filtroCategoria).toLowerCase();
+    const tallaF = toStr(filtroTalla).toLowerCase();
+    const colorF = toStr(filtroColor).toLowerCase();
 
-    const coincideTexto =
-      p.id.toLowerCase().includes(texto) ||
-      p.variantes?.some((v) => v.id.toLowerCase().includes(texto));
-
-    const coincideCategoria =
-      !filtroCategoria ||
-      (p.categoria &&
-        p.categoria.toLowerCase().includes(filtroCategoria.toLowerCase()));
-
-    const coincideTalla =
-      !filtroTalla ||
-      p.variantes?.some((v) =>
-        v.talla?.toLowerCase().includes(filtroTalla.toLowerCase())
+    return productos.filter((p) => {
+      const nombreOk = toStr(p.nombre).toLowerCase().includes(texto);
+      const idOk = toStr(p.id).toLowerCase().includes(texto);
+      const varianteIdOk = (p.variantes || []).some((v) =>
+        toStr(v.id).toLowerCase().includes(texto)
       );
 
-    const coincideColor =
-      !filtroColor ||
-      p.variantes?.some((v) =>
-        v.color?.toLowerCase().includes(filtroColor.toLowerCase())
-      );
+      const coincideCategoria =
+        !cat ||
+        (p.categoria && toStr(p.categoria).toLowerCase().includes(cat)) ||
+        (p.categoriaNombre &&
+          toStr(p.categoriaNombre).toLowerCase().includes(cat));
 
-    return coincideTexto && coincideCategoria && coincideTalla && coincideColor;
-  });
+      const coincideTalla =
+        !tallaF ||
+        (p.variantes || []).some((v) =>
+          getAttr(v, "talla").toLowerCase().includes(tallaF)
+        );
+
+      const coincideColor =
+        !colorF ||
+        (p.variantes || []).some((v) =>
+          getAttr(v, "color").toLowerCase().includes(colorF)
+        );
+
+      // dentro de useMemo de productosFiltrados, después de las const texto/cat/tallaF/colorF:
+      const coincideSku = (p) =>
+        (p.variantes || []).some((v) =>
+          (v.sku || "").toLowerCase().includes(texto)
+        );
+
+      const coincideBarcode = (p) =>
+        (p.variantes || []).some((v) =>
+          (v.barcode || "").toLowerCase().includes(texto)
+        );
+
+      // y en coincideTexto, añade estas dos condiciones:
+      const coincideTexto =
+        !texto ||
+        nombreOk ||
+        idOk ||
+        varianteIdOk ||
+        coincideSku(p) ||
+        coincideBarcode(p);
+
+      return (
+        coincideTexto && coincideCategoria && coincideTalla && coincideColor
+      );
+    });
+  }, [productos, filtroTexto, filtroCategoria, filtroTalla, filtroColor]);
 
   return (
     <div className="container mt-4">
@@ -169,7 +268,7 @@ export default function Inventario() {
             <input
               type="text"
               className="form-control"
-              placeholder="ID producto o variante"
+              placeholder="Nombre, ID producto o variante"
               value={filtroTexto}
               onChange={(e) => setFiltroTexto(e.target.value)}
             />
@@ -218,6 +317,7 @@ export default function Inventario() {
               className="form-select"
               onChange={handleProdChange}
               value={selectedProd?.id || ""}
+              disabled={loadingProds}
             >
               <option value="">— Selecciona —</option>
               {productosFiltrados.map((p) => (
@@ -226,16 +326,24 @@ export default function Inventario() {
                 </option>
               ))}
             </select>
-            {hasMoreProductos && (
-              <div className="mt-2">
-                <button
-                  className="btn btn-outline-primary btn-sm"
-                  onClick={cargarProductos}
-                >
-                  Cargar más productos
-                </button>
-              </div>
-            )}
+            <div className="mt-2 d-flex gap-2">
+              <button
+                className="btn btn-outline-primary btn-sm"
+                onClick={cargarProductos}
+                disabled={loadingProds || !hasMoreProductos}
+              >
+                {loadingProds
+                  ? "Cargando..."
+                  : hasMoreProductos
+                  ? "Cargar más productos"
+                  : "No hay más"}
+              </button>
+              {selectedProd && (
+                <span className="text-muted small">
+                  {loadingInv ? "Cargando inventario..." : ""}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -243,7 +351,7 @@ export default function Inventario() {
           <div className="mt-4">
             <h5>Variantes del producto</h5>
             <div className="table-responsive">
-              <table className="table table-bordered">
+              <table className="table table-bordered align-middle">
                 <thead>
                   <tr>
                     <th>ID</th>
@@ -252,15 +360,15 @@ export default function Inventario() {
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedProd.variantes.map((v) => (
+                  {(selectedProd.variantes || []).map((v) => (
                     <tr key={v.id}>
-                      <td>{v.id}</td>
-                      <td>
+                      <td>{v.sku}</td>
+                      <td style={{ maxWidth: 140 }}>
                         <input
                           type="number"
                           className="form-control"
                           min="0"
-                          value={valoresInventario[v.id]?.stock || 0}
+                          value={valoresInventario[v.id]?.stock ?? 0}
                           onChange={(e) =>
                             setValoresInventario((prev) => ({
                               ...prev,
@@ -272,12 +380,12 @@ export default function Inventario() {
                           }
                         />
                       </td>
-                      <td>
+                      <td style={{ maxWidth: 140 }}>
                         <input
                           type="number"
                           className="form-control"
                           min="0"
-                          value={valoresInventario[v.id]?.minimo || 0}
+                          value={valoresInventario[v.id]?.minimo ?? 0}
                           onChange={(e) =>
                             setValoresInventario((prev) => ({
                               ...prev,
@@ -295,16 +403,36 @@ export default function Inventario() {
               </table>
               <div className="mt-3 d-flex justify-content-end">
                 <button
-                  className="btn btn-success align-self-end"
+                  className="btn btn-success"
                   onClick={handleGuardarTodo}
+                  disabled={savingAll || loadingInv}
                 >
-                  Guardar todo con datos
+                  {savingAll ? "Guardando..." : "Guardar todo con datos"}
                 </button>
               </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* (Opcional) Logs si quieres mostrarlos aquí
+      <div className="mb-4">
+        <h5>Historial de Cambios</h5>
+        <div style={{ maxHeight: 300, overflowY: "auto" }}>
+          <ul className="list-group">
+            {logs.map((log) => (
+              <li key={log.id} className="list-group-item small">
+                <strong>{new Date(log.timestamp).toLocaleString()}</strong> —{" "}
+                {log.tipoOperacion} —{" "}
+                {Object.entries(log.cambio)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join(", ")}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      */}
     </div>
   );
 }

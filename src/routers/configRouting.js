@@ -1,5 +1,7 @@
+import CodigosBarra from "../pages/CodigosBarra/CodigosBarra";
 import Empleados from "../pages/Empleados/Empleados";
 import Home from "../pages/Home/Home";
+import InventarioGlobal from "../pages/Inventario/InventarioGlobal";
 import ProductosScreen from "../pages/Productos/Productos";
 import RegistroProducto from "../pages/Productos/RegistrarProductos";
 import Inventario from "../pages/Tiendas/Inventario/Inventario";
@@ -53,6 +55,16 @@ const configRouting = [
     path: "/empleados",
     page: Empleados,
     roles: ["ADMIN"],
+  },
+  {
+    path: "/inventario",
+    page: InventarioGlobal,
+    roles: ["ADMIN", "MANAGER"],
+  },
+  {
+    path: "/codigos-barra",
+    page: CodigosBarra,
+    roles: ["ADMIN", "MANAGER"],
   },
 ];
 

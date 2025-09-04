@@ -39,12 +39,28 @@ export function register({ email, password }) {
 }
 
 /**
- * Cierra la sesión del usuario actual.
+ * Cierra la sesión del usuario actual y limpia estado local.
  * @returns {Promise<void>}
  */
-export function logout() {
-  return firebaseSignOut(auth);
+export async function logout() {
+  try {
+    await firebaseSignOut(auth);
+  } finally {
+    // Limpia lo que el Sidebar y la app usan para permisos/usuario
+    localStorage.removeItem("app_roles");
+    localStorage.removeItem("app_role");
+    localStorage.removeItem("app_user");
+
+    // Si guardas algo más relacionado a sesión, bórralo aquí:
+    // localStorage.removeItem("some_other_key");
+    // sessionStorage.removeItem("...");
+
+    // Si en algún lugar seteaste axios.defaults.Authorization, límpialo:
+    // import axios from "axios";
+    // delete axios.defaults.headers.common.Authorization;
+  }
 }
+
 /**
  * Callback para cambios en el estado de autenticación.
  * @param {(user: import("firebase/auth").User|null) => void} callback

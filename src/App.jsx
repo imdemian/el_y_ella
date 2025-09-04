@@ -25,6 +25,7 @@ export default function App() {
         try {
           // ↪️ Aquí buscamos el perfil en Firestore y extraemos el rol
           const perfil = await obtenerUsuario(fbUser.uid);
+          setUser(perfil);
           setUserRole(perfil.rol || "");
         } catch (e) {
           console.error("Error cargando perfil:", e);
@@ -38,6 +39,8 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  console.log(user);
 
   if (loadingUser) {
     return (

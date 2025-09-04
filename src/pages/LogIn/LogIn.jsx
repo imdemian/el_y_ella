@@ -1,4 +1,3 @@
-// src/pages/LogIn/LogIn.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import logo from "../../assets/logoCuadradoLetras.png";
@@ -15,6 +14,12 @@ const LogIn = () => {
   const [errorMsg, setErrorMsg] = useState(null);
   const navigate = useNavigate();
 
+  const setRolesInStorage = (rolesArr) => {
+    const roles = Array.isArray(rolesArr) ? rolesArr : [];
+    localStorage.setItem("app_roles", JSON.stringify(roles));
+    localStorage.setItem("app_role", roles[0] || ""); // opcional, primer rol
+  };
+
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
@@ -28,23 +33,52 @@ const LogIn = () => {
     setErrorMsg(null);
 
     try {
-      // 1) Autentica con Firebase Auth
+      // 1) Autenticar
       const cred = await signInWithEmailAndPassword(
         auth,
         formData.email,
         formData.password
       );
 
-      // 2) Con el uid, obtén el perfil de Firestore (contiene el rol)
+      // 2) Perfil en Firestore (rol o roles)
       const perfil = await obtenerUsuario(cred.user.uid);
-      const role = perfil?.rol || "";
-      console.log("Rol obtenido del perfil:", role);
+      // poner datos del perfil en el contexto
+      
+      console.log(perfil);
+      const rolesFromPerfil = Array.isArray(perfil?.roles)
+        ? perfil.roles
+        : perfil?.rol
+        ? [perfil.rol]
+        : [];
 
-      // 3) Opcional: guardar role en algún contexto o global store
-      //    Ejemplo: setUserRole(role) si usas un hook o contexto aquí
+      // 3) Intentar leer custom claims (si los usas para roles)
+      let roles = rolesFromPerfil;
+      try {
+        const tokenResult = await cred.user.getIdTokenResult(true);
+        const claimRoles = tokenResult?.claims?.roles;
+        if (Array.isArray(claimRoles) && claimRoles.length) {
+          roles = claimRoles; // prioridad a claims si existen
+        }
+      } catch {
+        // ignorar errores de claims
+      }
+
+      // 4) Guardar en storage para que el Sidebar filtre el menú
+      setRolesInStorage(roles);
+
+      // 5) (Opcional) guardar info útil del usuario
+      localStorage.setItem(
+        "app_user",
+        JSON.stringify({
+          uid: cred.user.uid,
+          email: cred.user.email,
+          nombre: perfil?.nombre || "",
+          roles,
+        })
+      );
 
       toast.success("Inicio de sesión exitoso");
-      navigate("/");
+      navigate("/", { replace: true }); // o "/home"
     } catch (err) {
       console.error(err);
       const msg =

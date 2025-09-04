@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   crearProducto,
   actualizarProducto,
+  obtenerProducto,
 } from "../../services/productoService";
 import { obtenerCategorias } from "../../services/categoriaService";
 import { toast } from "react-toastify";
@@ -90,59 +91,84 @@ const RegistroProducto = ({ producto, setShow }) => {
   ]);
   const [combinaciones, setCombinaciones] = useState([]);
 
-  // Carga inicial
+  // Carga inicial (trae categorías y, si hace falta, el producto completo con variantes)
   useEffect(() => {
+    let alive = true;
+
     (async () => {
+      // 1) Categorías
       try {
         const cats = await obtenerCategorias();
+        if (!alive) return;
         setCategorias(cats || []);
       } catch {
         toast.error("Error al cargar categorías");
       }
 
-      if (producto) {
-        setNombre(producto.nombre || "");
-        setDescripcion(producto.descripcion || "");
-        // si backend guardó categoriaId y categoria (nombre)
-        setCategoriaId(producto.categoriaId || "");
-        setCategoria(producto.categoria || "");
+      // 2) Producto (si viene)
+      if (!producto) return;
 
-        setPrecioBase(
-          producto.precioBase != null ? String(producto.precioBase) : ""
-        );
-        setImagenes(producto.imagenes?.length ? producto.imagenes : [""]);
-
-        if (producto.variantes?.length) {
-          setTieneVariantes(true);
-
-          // Reconstruye "schema" de atributos a partir de todas las variantes
-          const schema = {};
-          for (const v of producto.variantes) {
-            Object.entries(v.atributos || {}).forEach(([k, val]) => {
-              const key = String(k).trim();
-              schema[key] = schema[key] || new Set();
-              schema[key].add(String(val).trim());
-            });
-          }
-          setVariantes(
-            Object.entries(schema).map(([atributo, set]) => ({
-              atributo,
-              opciones: Array.from(set),
-            }))
-          );
-
-          // Combos preservando id, precio, sku, barcode
-          const initCombos = producto.variantes.map((v) => ({
-            id: v.id, // estable
-            ...v.atributos, // atributos (Color/Talla/etc.)
-            precio: v.precio ?? producto.precioBase,
-            sku: v.sku || "",
-            barcode: v.barcode || "",
-          }));
-          setCombinaciones(initCombos);
+      // Si el producto que llega no trae variantes, lo pedimos completo por ID
+      let p = producto;
+      if (producto.id && !Array.isArray(producto.variantes)) {
+        try {
+          const full = await obtenerProducto(producto.id);
+          if (!alive) return;
+          p = full;
+        } catch (e) {
+          console.error(e);
+          toast.error("No se pudo cargar el producto completo");
         }
       }
+
+      // Poblar campos base
+      setNombre(p?.nombre || "");
+      setDescripcion(p?.descripcion || "");
+      setCategoriaId(p?.categoriaId || "");
+      setCategoria(p?.categoria || "");
+      setPrecioBase(p?.precioBase != null ? String(p.precioBase) : "");
+      setImagenes(p?.imagenes?.length ? p.imagenes : [""]);
+
+      // Variantes
+      const hasVars = Array.isArray(p?.variantes) && p.variantes.length > 0;
+      setTieneVariantes(hasVars);
+
+      if (hasVars) {
+        // Reconstruir el "schema" de atributos a partir de todas las variantes
+        const schema = {};
+        for (const v of p.variantes) {
+          Object.entries(v.atributos || {}).forEach(([k, val]) => {
+            const key = String(k).trim();
+            if (!schema[key]) schema[key] = new Set();
+            schema[key].add(String(val).trim());
+          });
+        }
+        setVariantes(
+          Object.entries(schema).map(([atributo, set]) => ({
+            atributo,
+            opciones: Array.from(set),
+          }))
+        );
+
+        // Combos preservando id, precio, sku, barcode
+        const initCombos = p.variantes.map((v) => ({
+          id: v.id,
+          ...v.atributos, // Color/Talla/etc.
+          precio: v.precio ?? p.precioBase,
+          sku: v.sku || "",
+          barcode: v.barcode || "",
+        }));
+        setCombinaciones(initCombos);
+      } else {
+        // Si no hay variantes, resetea a estado mínimo
+        setVariantes([{ atributo: "", opciones: [""] }]);
+        setCombinaciones([]);
+      }
     })();
+
+    return () => {
+      alive = false;
+    };
   }, [producto]);
 
   // ---------- Handlers imágenes ----------
