@@ -1,7 +1,6 @@
 import CodigosBarra from "../pages/CodigosBarra/CodigosBarra";
 import Empleados from "../pages/Empleados/Empleados";
 import Home from "../pages/Home/Home";
-import InventarioGlobal from "../pages/Inventario/InventarioGlobal";
 import ProductosScreen from "../pages/Productos/Productos";
 import RegistroProducto from "../pages/Productos/RegistrarProductos";
 import Inventario from "../pages/Tiendas/Inventario/Inventario";
@@ -10,61 +9,57 @@ import TiendasScreen from "../pages/Tiendas/Tiendas";
 import RegistroUsuario from "../pages/Usuarios/Registro.Usuario";
 import Usuarios from "../pages/Usuarios/Usuarios";
 
+// ✅ Roles en minúscula para coincidir con la base de datos
 const configRouting = [
   {
     path: "/",
     page: Home,
-    roles: ["ADMIN", "MANAGER", "TECNICO"],
+    roles: ["admin", "manager", "tecnico"],
   },
   {
     path: "/registro-productos",
     page: RegistroProducto,
-    roles: ["ADMIN", "MANAGER"],
+    roles: ["admin", "manager"],
   },
   {
     path: "/registro-usuarios",
     page: RegistroUsuario,
-    roles: ["ADMIN", "MANAGER"],
+    roles: ["admin", "manager"],
   },
   {
     path: "/usuarios",
     page: Usuarios,
-    roles: ["ADMIN"],
+    roles: ["admin"],
   },
   {
     path: "/tiendas",
     page: TiendasScreen,
-    roles: ["ADMIN"],
+    roles: ["admin"],
   },
   {
     path: "/tiendas/:tiendaId/inventario",
     page: Inventario,
-    roles: ["ADMIN", "MANAGER"],
+    roles: ["admin", "manager"],
   },
   {
     path: "/tiendas/:tiendaId/inventarioTest",
     page: InventarioTest,
-    roles: ["ADMIN", "MANAGER"],
+    roles: ["admin", "manager"],
   },
   {
     path: "/productos",
     page: ProductosScreen,
-    roles: ["ADMIN"],
+    roles: ["admin"],
   },
   {
     path: "/empleados",
     page: Empleados,
-    roles: ["ADMIN"],
-  },
-  {
-    path: "/inventario",
-    page: InventarioGlobal,
-    roles: ["ADMIN", "MANAGER"],
+    roles: ["admin"],
   },
   {
     path: "/codigos-barra",
     page: CodigosBarra,
-    roles: ["ADMIN", "MANAGER"],
+    roles: ["admin", "manager"],
   },
 ];
 

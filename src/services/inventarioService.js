@@ -16,7 +16,7 @@ async function authHeaders() {
   };
 }
 
-/** Helper para armar querystring limpio (omite null/undefined/""/false) */
+/** Arma querystring limpio (omite null/undefined/"" y booleans como 1/0) */
 function buildQuery(params = {}) {
   const qs = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => {
@@ -31,16 +31,7 @@ function buildQuery(params = {}) {
 
 /**
  * Inventario global (agregado por variante)
- * @param {Object} opts
- * @param {number} [opts.limit=50]
- * @param {string} [opts.startAfter] - cursor para paginación
- * @param {string} [opts.q] - prefijo por nombre de producto (case-insensitive)
- * @param {string} [opts.categoryId]
- * @param {string} [opts.sku]
- * @param {string} [opts.barcode]
- * @param {string} [opts.variantId]
- * @param {boolean} [opts.includeStores=false] - incluir mapa stores por variante
- * @returns {Promise<{success:boolean, items:Array, next:string|null}>}
+ * GET /inventario/global
  */
 export async function obtenerInventarioGlobal(opts = {}) {
   const headers = await authHeaders();
@@ -57,22 +48,12 @@ export async function obtenerInventarioGlobal(opts = {}) {
   const { data } = await axios.get(`${BASE}/inventario/global${query}`, {
     headers,
   });
-  return data;
+  return data; // { success, items, nextStartAfter }
 }
 
 /**
- * Inventario por tienda (índice rápido)
- * @param {Object} opts
- * @param {string} opts.storeId (requerido)
- * @param {number} [opts.limit=50]
- * @param {string} [opts.startAfter]
- * @param {string} [opts.q]
- * @param {string} [opts.categoryId]
- * @param {string} [opts.sku]
- * @param {string} [opts.barcode]
- * @param {string} [opts.variantId]
- * @param {boolean} [opts.lowStock=false] - sólo faltantes (stock <= min)
- * @returns {Promise<{success:boolean, items:Array, next:string|null}>}
+ * Inventario por tienda (índice)
+ * GET /inventario/tienda
  */
 export async function obtenerInventarioDeTienda(opts = {}) {
   if (!opts.storeId) throw new Error("storeId es requerido");
@@ -91,28 +72,65 @@ export async function obtenerInventarioDeTienda(opts = {}) {
   const { data } = await axios.get(`${BASE}/inventario/tienda${query}`, {
     headers,
   });
-  return data;
+  return data; // { success, items, nextStartAfter }
 }
 
 /**
- * Ficha agregada de una variante (total global + metadata)
- * @param {string} variantId
- * @returns {Promise<{success:boolean, item:Object}>}
+ * Agregado puntual por variante (global)
+ * GET /inventario/variante/:variantId
  */
 export async function obtenerInventarioPorVariante(variantId) {
   const headers = await authHeaders();
-  const { data } = await axios.get(`${BASE}/inventario/${variantId}`, {
+  const { data } = await axios.get(`${BASE}/inventario/variante/${variantId}`, {
     headers,
   });
-  return data;
+  return data; // { success, id, ...campos del agg }
+}
+
+/**
+ * Agregado global por PRODUCTO (todas las variantes de ese producto)
+ * GET /inventario/producto/:productId
+ */
+export async function obtenerInventarioGlobalPorProducto(productId, opts = {}) {
+  const headers = await authHeaders();
+  const query = buildQuery({
+    limit: opts.limit ?? 50,
+    startAfter: opts.startAfter,
+    includeStores: !!opts.includeStores,
+  });
+  const { data } = await axios.get(
+    `${BASE}/inventario/producto/${productId}${query}`,
+    { headers }
+  );
+  return data; // { success, items, next }
+}
+
+/**
+ * Inventario por PRODUCTO en una TIENDA (todas las variantes del producto en esa tienda)
+ * GET /inventario/tienda/producto/:productId?storeId=...&lowStock=1
+ */
+export async function obtenerInventarioDeTiendaPorProducto(
+  productId,
+  { storeId, limit = 50, startAfter, lowStock = false } = {}
+) {
+  if (!storeId) throw new Error("storeId es requerido");
+  const headers = await authHeaders();
+  const query = buildQuery({
+    storeId,
+    limit,
+    startAfter,
+    lowStock: !!lowStock,
+  });
+  const { data } = await axios.get(
+    `${BASE}/inventario/tienda/producto/${productId}${query}`,
+    { headers }
+  );
+  return data; // { success, items, next }
 }
 
 /**
  * Set de stock/min para una variante en una tienda (ajuste manual)
- * @param {string} storeId
- * @param {string} variantId
- * @param {{ productId:string, stock:number, minimoStock:number }} body
- * @returns {Promise<{success:boolean, item:Object}>}
+ * PUT /inventario/tiendas/:storeId/variantes/:variantId
  */
 export async function setStockVarianteEnTienda(storeId, variantId, body) {
   const headers = await authHeaders();
@@ -121,18 +139,33 @@ export async function setStockVarianteEnTienda(storeId, variantId, body) {
     body,
     { headers }
   );
-  return data;
+  return data; // { success, message }
 }
 
 /**
  * Transferir stock entre tiendas
- * @param {{ productId:string, variantId:string, fromStoreId:string, toStoreId:string, quantity:number, motivo?:string }} body
- * @returns {Promise<{success:boolean, moved:number, correlacionId:string}>}
+ * POST /inventario/transfer
  */
 export async function transferirInventario(body) {
   const headers = await authHeaders();
   const { data } = await axios.post(`${BASE}/inventario/transfer`, body, {
     headers,
   });
-  return data;
+  return data; // { success, message }
+}
+
+/* ===== Helpers para escáner (SKU/Barcode) ===== */
+
+export async function buscarVariantePorSKU(
+  sku,
+  { includeStores = false } = {}
+) {
+  return obtenerInventarioGlobal({ sku, includeStores, limit: 1 });
+}
+
+export async function buscarVariantePorBarcode(
+  barcode,
+  { includeStores = false } = {}
+) {
+  return obtenerInventarioGlobal({ barcode, includeStores, limit: 1 });
 }

@@ -1,12 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react"; // ✅ 1. Importa useContext
 import { useNavigate } from "react-router-dom";
 import logo from "../../assets/logoCuadradoLetras.png";
 import "./LogIn.scss";
 import { toast } from "react-toastify";
-
-import { auth } from "../../firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { obtenerUsuario } from "../../services/usuariosService";
+import { AuthService } from "../../services/supabase/authService";
+import { AuthContext } from "../../utils/context"; // ✅ 2. Importa tu AuthContext
 
 const LogIn = () => {
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -14,14 +12,25 @@ const LogIn = () => {
   const [errorMsg, setErrorMsg] = useState(null);
   const navigate = useNavigate();
 
-  const setRolesInStorage = (rolesArr) => {
-    const roles = Array.isArray(rolesArr) ? rolesArr : [];
-    localStorage.setItem("app_roles", JSON.stringify(roles));
-    localStorage.setItem("app_role", roles[0] || ""); // opcional, primer rol
-  };
+  // ✅ 3. Obtén las funciones 'login' y 'logout' del contexto
+  const { login, logout } = useContext(AuthContext);
 
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
+
+  // ✅ 4. USA LA FUNCIÓN LOGOUT DEL CONTEXTO
+  // Esto asegura que el estado en App.jsx se limpie correctamente.
+  const handleLogout = async () => {
+    try {
+      await AuthService.logout();
+    } catch (error) {
+      console.error("Error en logout del servidor:", error);
+    } finally {
+      logout(); // Llama a la función del contexto
+      navigate("/login", { replace: true });
+      toast.info("Sesión cerrada");
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -33,73 +42,41 @@ const LogIn = () => {
     setErrorMsg(null);
 
     try {
-      // 1) Autenticar
-      const cred = await signInWithEmailAndPassword(
-        auth,
-        formData.email,
-        formData.password
-      );
+      // 1) Autenticar con el backend (esto no cambia)
+      const result = await AuthService.login(formData.email, formData.password);
 
-      // 2) Perfil en Firestore (rol o roles)
-      const perfil = await obtenerUsuario(cred.user.uid);
-      // poner datos del perfil en el contexto
-      
-      console.log(perfil);
-      const rolesFromPerfil = Array.isArray(perfil?.roles)
-        ? perfil.roles
-        : perfil?.rol
-        ? [perfil.rol]
-        : [];
-
-      // 3) Intentar leer custom claims (si los usas para roles)
-      let roles = rolesFromPerfil;
-      try {
-        const tokenResult = await cred.user.getIdTokenResult(true);
-        const claimRoles = tokenResult?.claims?.roles;
-        if (Array.isArray(claimRoles) && claimRoles.length) {
-          roles = claimRoles; // prioridad a claims si existen
-        }
-      } catch {
-        // ignorar errores de claims
-      }
-
-      // 4) Guardar en storage para que el Sidebar filtre el menú
-      setRolesInStorage(roles);
-
-      // 5) (Opcional) guardar info útil del usuario
-      localStorage.setItem(
-        "app_user",
-        JSON.stringify({
-          uid: cred.user.uid,
-          email: cred.user.email,
-          nombre: perfil?.nombre || "",
-          roles,
-        })
-      );
+      // ✅ 5. LA PARTE MÁS IMPORTANTE: USA LA FUNCIÓN LOGIN DEL CONTEXTO
+      // Esta única línea actualiza el estado en App.jsx Y guarda los datos en localStorage.
+      login(result);
 
       toast.success("Inicio de sesión exitoso");
-      navigate("/", { replace: true }); // o "/home"
+
+      // Ahora la navegación funcionará porque App.jsx ya sabe que el usuario existe.
+      navigate("/", { replace: true });
     } catch (err) {
-      console.error(err);
-      const msg =
-        err.code === "auth/wrong-password"
-          ? "Contraseña incorrecta."
-          : err.code === "auth/user-not-found"
-          ? "Usuario no encontrado."
-          : err.response?.data?.message || "Error al iniciar sesión.";
-      setErrorMsg(msg);
-      toast.error(msg);
+      console.error("Error en login:", err);
+
+      let errorMessage = "Error al iniciar sesión";
+      if (err.message.includes("Invalid login credentials")) {
+        errorMessage = "Email o contraseña incorrectos";
+      } else {
+        errorMessage = err.message;
+      }
+
+      setErrorMsg(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+  // El JSX no cambia, solo la lógica interna
   return (
     <div className="container-fluid vh-100 d-flex align-items-center justify-content-center bg-dark">
       <div className="card p-4" style={{ maxWidth: 400, width: "100%" }}>
         <div className="card-body">
           <div className="logo mb-3">
-            <img src={logo} alt="Logo ServiHogar e Industrial" />
+            <img src={logo} alt="Logo de la empresa" />
           </div>
           <h2 className="card-title text-center mb-4">Iniciar Sesión</h2>
           {errorMsg && <div className="alert alert-danger">{errorMsg}</div>}
@@ -131,17 +108,14 @@ const LogIn = () => {
               className="btn btn-primary w-100"
               disabled={loading}
             >
-              {loading ? (
-                <>
-                  <span
-                    className="spinner-border spinner-border-sm me-2"
-                    role="status"
-                  />
-                  Cargando...
-                </>
-              ) : (
-                "Iniciar Sesión"
-              )}
+              {loading ? "Cargando..." : "Iniciar Sesión"}
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="btn btn-secondary w-100 mt-2"
+            >
+              Cerrar Sesión (Test)
             </button>
           </form>
         </div>

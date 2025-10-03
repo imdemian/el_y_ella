@@ -5,9 +5,9 @@ import {
   faArrowLeft,
   faArrowRight,
   faBoxesStacked,
+  faChildDress,
   faHome,
   faMoneyBill1,
-  faNoteSticky,
   faQuestionCircle,
   faScrewdriverWrench,
   faShop,
@@ -47,7 +47,7 @@ const Sidebar = () => {
   // 🚨 Rutas permitidas por rol
   // ==========================
   const permisosPorRol = {
-    ADMIN: [
+    admin: [
       "Inicio",
       "Ventas",
       "Etiquetas",
@@ -59,7 +59,7 @@ const Sidebar = () => {
     ],
     MANAGER: ["Inicio", "Ventas", "Productos", "Usuarios"],
     TECNICO: ["Inicio", "Órdenes de Trabajo"],
-    USER: ["Inicio", "Ventas"],
+    user: ["Inicio", "Ventas"],
   };
 
   // ==========================
@@ -96,8 +96,8 @@ const Sidebar = () => {
       <div className="top-section">
         {!isCollapsed && (
           <div className="logo">
-            <FontAwesomeIcon icon={faScrewdriverWrench} />
-            <span>ServiHogar</span>
+            <FontAwesomeIcon icon={faChildDress} />
+            <span>El y Ella TPV</span>
           </div>
         )}
         <button className="toggle-btn" onClick={toggleSidebar}>
