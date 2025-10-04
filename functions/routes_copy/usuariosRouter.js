@@ -4,7 +4,7 @@ import { supabaseAdmin } from "../config/supabase.js"; // Importamos el cliente 
 import {
   authenticateToken,
   requireRole,
-} from "../middleware/authMiddleware.js"; // Importamos los middlewares
+} from "../middlewares/authMiddleware.js"; // Importamos los middlewares
 
 const router = express.Router();
 

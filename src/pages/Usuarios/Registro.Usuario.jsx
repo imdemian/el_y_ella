@@ -1,22 +1,25 @@
-// src/pages/RegisterTest/RegisterTest.jsx
 import React, { useState } from "react";
 import { toast } from "react-toastify";
-import { register } from "../../services/authService";
+import { AuthService } from "../../services/supabase/authService";
+import { UsuariosService } from "../../services/supabase/usuariosService";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-  crearUsuario,
-  actualizarUsuario,
-  changePassword,
-} from "../../services/usuariosService";
+  faEnvelope,
+  faLock,
+  faUser,
+  faUserTag,
+} from "@fortawesome/free-solid-svg-icons";
+import "./Registro.Usuario.scss";
 
-export default function RegistroUsuario({ usuario, setShow }) {
+export default function RegistroUsuario({ usuario, setShow, refetch }) {
   const isEdit = !!usuario;
 
   const [form, setForm] = useState({
     email: usuario?.email || "",
     password: "",
     nombre: usuario?.nombre || "",
-    rol: usuario?.rol || "USER",
-    empleadoId: usuario?.empleadoId || "",
+    apellido: usuario?.apellido || "",
+    rol: usuario?.rol || "user",
   });
   const [loading, setLoading] = useState(false);
 
@@ -29,136 +32,181 @@ export default function RegistroUsuario({ usuario, setShow }) {
 
     try {
       if (isEdit) {
-        //  EDITAR USUARIO
-
-        // 1. Actualizar documento en Firestore
-        await actualizarUsuario(usuario.id, {
-          email: form.email,
+        // EDITAR USUARIO
+        const updateData = {
           nombre: form.nombre,
           rol: form.rol,
-          empleadoId: form.empleadoId || undefined,
-        });
+        };
 
-        // 2. Si se ingresó nueva contraseña, actualizarla
-        if (form.password) {
-          await changePassword(usuario.id, { nuevaPassword: form.password });
+        if (form.empleadoId) {
+          updateData.empleadoId = form.empleadoId;
         }
 
-        toast.success("Usuario actualizado correctamente");
+        await UsuariosService.actualizarUsuario(usuario.id, updateData);
+
+        // Si se ingresó nueva contraseña, actualizarla
+        if (form.password) {
+          await UsuariosService.changePassword(usuario.id, {
+            nuevaPassword: form.password,
+          });
+        }
+
+        toast.success("✅ Usuario actualizado correctamente");
       } else {
         // CREAR USUARIO
-
-        // 1.  Crear en Auth
-        const cred = await register({
+        const userData = {
           email: form.email,
           password: form.password,
-        });
-
-        // 2. Crear documento en Firestore
-        await crearUsuario({
-          uid: cred.user.uid,
-          email: form.email,
           nombre: form.nombre,
+          apellido: form.apellido,
           rol: form.rol,
-          empleadoId: form.empleadoId || undefined,
-        });
+        };
 
-        toast.success("Usuario registrado correctamente");
+        if (form.empleadoId) {
+          userData.empleadoId = form.empleadoId;
+        }
+
+        await AuthService.register(userData);
+        toast.success("✅ Usuario registrado correctamente");
       }
 
       setShow(false);
+      if (refetch) refetch();
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.message || err.message);
+      toast.error(err.message || "Error al procesar la solicitud");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div>
-      <h3 className="mb-3 text-center">
-        {isEdit ? "Editar" : "Registrar"} Usuario
-      </h3>
+    <div className="registro-usuario-form">
+      <div className="form-header">
+        <h3>{isEdit ? "Editar Usuario" : "Registrar Nuevo Usuario"}</h3>
+        <p className="form-subtitle">
+          {isEdit
+            ? "Actualiza la información del usuario"
+            : "Completa los datos para crear un nuevo usuario"}
+        </p>
+      </div>
+
       <form onSubmit={handleSubmit}>
-        <div className="mb-2">
+        <div className="form-group">
+          <label htmlFor="email" className="form-label">
+            <FontAwesomeIcon icon={faEnvelope} /> Correo Electrónico
+          </label>
           <input
             type="email"
+            id="email"
             name="email"
-            placeholder="Email"
+            placeholder="ejemplo@correo.com"
             value={form.email}
             onChange={handleChange}
             required
-            className="form-control"
-            disabled={isEdit} // Generalmente no se cambia email por frontend
+            className="form-input"
+            disabled={isEdit}
           />
+          {isEdit && (
+            <small className="form-hint">El correo no se puede modificar</small>
+          )}
         </div>
-        <div className="mb-2">
+
+        <div className="form-group">
+          <label htmlFor="password" className="form-label">
+            <FontAwesomeIcon icon={faLock} />{" "}
+            {isEdit ? "Nueva Contraseña" : "Contraseña"}
+          </label>
           <input
             type="password"
+            id="password"
             name="password"
-            placeholder={isEdit ? "Nueva contraseña (opcional)" : "Password"}
+            placeholder={
+              isEdit ? "Dejar en blanco para mantener actual" : "••••••••"
+            }
             value={form.password}
             onChange={handleChange}
-            className="form-control"
+            className="form-input"
             required={!isEdit}
+            minLength={6}
           />
+          {isEdit && (
+            <small className="form-hint">
+              Deja este campo vacío si no deseas cambiar la contraseña
+            </small>
+          )}
         </div>
-        <div className="mb-2">
+
+        <div className="form-group">
+          <label htmlFor="nombre" className="form-label">
+            <FontAwesomeIcon icon={faUser} /> Nombre
+          </label>
           <input
             type="text"
+            id="nombre"
             name="nombre"
-            placeholder="Nombre"
+            placeholder="Nombre completo del usuario"
             value={form.nombre}
             onChange={handleChange}
             required
-            className="form-control"
-          />
-        </div>
-        <div className="mb-2">
-          <input
-            type="text"
-            name="empleadoId"
-            placeholder="ID Empleado (opcional)"
-            value={form.empleadoId}
-            onChange={handleChange}
-            className="form-control"
+            className="form-input"
           />
         </div>
 
-        <div className="mb-3">
+        <div className="form-group">
+          <label htmlFor="apellido" className="form-label">
+            <FontAwesomeIcon icon={faUser} /> Apellido
+          </label>
+          <input
+            type="text"
+            id="apellido"
+            name="apellido"
+            placeholder="Apellido del usuario"
+            value={form.apellido}
+            onChange={handleChange}
+            required
+            className="form-input"
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="rol" className="form-label">
+            <FontAwesomeIcon icon={faUserTag} /> Rol del Usuario
+          </label>
           <select
+            id="rol"
             name="rol"
             value={form.rol}
             onChange={handleChange}
             className="form-select"
           >
-            <option value="USER">User</option>
-            <option value="ADMIN">Admin</option>
-            <option value="MANAGER">Manager</option>
-            <option value="TECNICO">Técnico</option>
+            <option value="user">Usuario</option>
+            <option value="admin">Administrador</option>
+            <option value="manager">Gerente</option>
+            <option value="tecnico">Técnico</option>
           </select>
         </div>
 
-        <button
-          type="submit"
-          className="btn btn-primary w-100"
-          disabled={loading}
-        >
-          {loading ? (
-            <>
-              <span
-                className="spinner-border spinner-border-sm me-2"
-                role="status"
-              />
-              {isEdit ? "Actualizando…" : "Registrando…"}
-            </>
-          ) : isEdit ? (
-            "Actualizar"
-          ) : (
-            "Registrar"
-          )}
-        </button>
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn-cancel"
+            onClick={() => setShow(false)}
+            disabled={loading}
+          >
+            Cancelar
+          </button>
+          <button type="submit" className="btn-submit" disabled={loading}>
+            {loading ? (
+              <>
+                <span className="spinner" />
+                {isEdit ? "Actualizando..." : "Registrando..."}
+              </>
+            ) : (
+              <>{isEdit ? "Actualizar Usuario" : "Registrar Usuario"}</>
+            )}
+          </button>
+        </div>
       </form>
     </div>
   );

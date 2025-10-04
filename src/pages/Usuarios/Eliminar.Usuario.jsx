@@ -1,15 +1,25 @@
 import { useEffect, useState } from "react";
-import { eliminarUsuario } from "../../services/usuariosService";
+import { UsuariosService } from "../../services/supabase/usuariosService";
 import { toast } from "react-toastify";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faExclamationTriangle,
+  faUser,
+  faEnvelope,
+  faUserTag,
+  faIdCard,
+} from "@fortawesome/free-solid-svg-icons";
+import "./Eliminar.Usuario.scss";
 
-const EliminarUsuario = ({ usuario, setShow }) => {
+const EliminarUsuario = ({ usuario, setShow, refetch }) => {
+  const [loading, setLoading] = useState(false);
   // Inicializar los datos
   const [formData, setFormData] = useState({
     id: usuario.id,
     email: usuario.email,
     nombre: usuario.nombre,
     rol: usuario.rol,
-    empleado: usuario.empleado,
+    empleadoId: usuario.empleadoId,
   });
 
   // Actualiza formData si la prop 'usuario' cambia (modo edición)
@@ -20,95 +30,104 @@ const EliminarUsuario = ({ usuario, setShow }) => {
         email: usuario.email || "",
         nombre: usuario.nombre || "",
         rol: usuario.rol || "",
-        empleado: usuario.empleado || "",
+        empleadoId: usuario.empleadoId || "",
       });
     }
   }, [usuario]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
 
     try {
-      const response = await eliminarUsuario(formData.id);
-      console.log(response);
-      if (response.status === 200) {
-        toast.success("Usuario eliminado con éxito");
-      }
+      await UsuariosService.eliminarUsuario(formData.id);
+      toast.success("✅ Usuario eliminado con éxito");
+      setShow(false);
+      if (refetch) refetch();
     } catch (error) {
-      console.log(error);
-      const msg =
-        error.response?.data?.message ||
-        "Error al eliminar el usuario. Inténtalo de nuevo.";
+      console.error(error);
+      const msg = error.message || "Error al eliminar el usuario.";
       toast.error(msg);
     } finally {
-      setShow(false); // Cierra el modal después de eliminar
+      setLoading(false);
     }
   };
 
   return (
-    <div>
-      <h2>Eliminar Usuario</h2>
-      <p className="text-center">
-        ¿Estás seguro de que deseas eliminar al usuario {formData.nombre}?
-      </p>
+    <div className="eliminar-usuario-modal">
+      <div className="warning-header">
+        <FontAwesomeIcon
+          icon={faExclamationTriangle}
+          className="warning-icon"
+        />
+        <h3>Eliminar Usuario</h3>
+      </div>
+
+      <div className="warning-message">
+        <p>¿Estás seguro de que deseas eliminar al siguiente usuario?</p>
+        <p className="warning-text">
+          Esta acción no se puede deshacer y eliminará permanentemente toda la
+          información del usuario.
+        </p>
+      </div>
+
+      <div className="usuario-info">
+        <div className="info-item">
+          <FontAwesomeIcon icon={faUser} className="info-icon" />
+          <div>
+            <label>Nombre</label>
+            <p>{formData.nombre}</p>
+          </div>
+        </div>
+
+        <div className="info-item">
+          <FontAwesomeIcon icon={faEnvelope} className="info-icon" />
+          <div>
+            <label>Email</label>
+            <p>{formData.email}</p>
+          </div>
+        </div>
+
+        <div className="info-item">
+          <FontAwesomeIcon icon={faUserTag} className="info-icon" />
+          <div>
+            <label>Rol</label>
+            <p className={`badge-rol badge-rol-${formData.rol?.toLowerCase()}`}>
+              {formData.rol}
+            </p>
+          </div>
+        </div>
+
+        {formData.empleadoId && (
+          <div className="info-item">
+            <FontAwesomeIcon icon={faIdCard} className="info-icon" />
+            <div>
+              <label>ID Empleado</label>
+              <p>{formData.empleadoId}</p>
+            </div>
+          </div>
+        )}
+      </div>
 
       <form onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="nombre" className="form-label mt-3">
-            Nombre:
-          </label>
-          <input
-            type="text"
-            id="nombre"
-            value={formData.nombre}
-            className="form-control"
-            readOnly
-            disabled
-          />
-        </div>
-        <div>
-          <label htmlFor="email" className="form-label mt-3">
-            Email:
-          </label>
-          <input
-            type="email"
-            id="email"
-            value={formData.email}
-            className="form-control"
-            readOnly
-            disabled
-          />
-        </div>
-        <div>
-          <label htmlFor="rol" className="form-label mt-3">
-            Rol:
-          </label>
-          <input
-            type="text"
-            id="rol"
-            value={formData.rol}
-            className="form-control"
-            readOnly
-            disabled
-          />
-        </div>
-        <div>
-          <label htmlFor="empleado" className="form-label mt-3">
-            Empleado:
-          </label>
-          <input
-            type="text"
-            id="empleado"
-            value={formData.empleado || ""}
-            className="form-control"
-            readOnly
-            disabled
-          />
-        </div>
-
-        <div className="d-flex justify-content-center mt-4">
-          <button type="submit" className="btn btn-danger">
-            Eliminar
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn-cancel"
+            onClick={() => setShow(false)}
+            disabled={loading}
+          >
+            Cancelar
+          </button>
+          <button type="submit" className="btn-delete" disabled={loading}>
+            {loading ? (
+              <>
+                <span className="spinner" />
+                Eliminando...
+              </>
+            ) : (
+              "Eliminar Usuario"
+            )}
           </button>
         </div>
       </form>

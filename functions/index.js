@@ -16,6 +16,7 @@ import inventarioRouter from "./routes/inventarioRouter.js";
 import supAuthRouter from "./routes_copy/authRouter.js";
 import supCategoriasRouter from "./routes_copy/categoriasRouter.js";
 import supTiendaRouter from "./routes_copy/tiendaRouter.js";
+import supUsuariosRouter from "./routes_copy/usuariosRouter.js";
 import supEmpleadoRouter from "./routes_copy/empleadoRouter.js";
 
 const app = express();
@@ -34,6 +35,7 @@ app.use("/inventario", inventarioRouter);
 app.use("/supabase/auth", supAuthRouter);
 app.use("/supabase/categorias", supCategoriasRouter);
 app.use("/supabase/tiendas", supTiendaRouter);
+app.use("/supabase/usuarios", supUsuariosRouter);
 app.use("/supabase/empleados", supEmpleadoRouter);
 
 // Montar la API

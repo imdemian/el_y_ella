@@ -2,8 +2,7 @@
 import React, { useContext, useState } from "react";
 import "./sidebar.scss";
 import {
-  faArrowLeft,
-  faArrowRight,
+  faBars,
   faBoxesStacked,
   faChildDress,
   faHome,
@@ -13,7 +12,6 @@ import {
   faSignOutAlt,
   faTag,
   faUsers,
-  faUserTie,
   faWarehouse,
 } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -35,7 +33,7 @@ const Sidebar = () => {
     try {
       await logout();
       toast.success("Sesión cerrada");
-      navigate("/login", { replace: true });
+      navigate("/login");
     } catch (err) {
       console.error(err);
       toast.error("Error al cerrar sesión");
@@ -56,7 +54,6 @@ const Sidebar = () => {
       "Productos",
       "Inventario",
       "Usuarios",
-      "Empleados",
       "Tiendas",
     ],
     MANAGER: ["Inicio", "Ventas", "Productos", "Usuarios"],
@@ -74,7 +71,6 @@ const Sidebar = () => {
     { title: "Productos", route: "/productos", icon: faBoxesStacked },
     { title: "Inventario", route: "/inventario", icon: faWarehouse },
     { title: "Usuarios", route: "/usuarios", icon: faUsers },
-    { title: "Empleados", route: "/empleados", icon: faUserTie },
     { title: "Tiendas", route: "/tiendas", icon: faShop },
   ];
 
@@ -108,7 +104,7 @@ const Sidebar = () => {
           onClick={toggleSidebar}
           aria-label={isCollapsed ? "Expandir menú" : "Contraer menú"}
         >
-          <FontAwesomeIcon icon={isCollapsed ? faArrowRight : faArrowLeft} />
+          <FontAwesomeIcon icon={faBars} />
         </button>
       </div>
 

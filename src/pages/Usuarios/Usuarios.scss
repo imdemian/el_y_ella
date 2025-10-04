@@ -1,0 +1,316 @@
+.usuarios-page {
+  padding: 2rem;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+    padding: 2rem;
+    background: linear-gradient(135deg, #9b7fa8 0%, #8f749f 100%);
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(143, 116, 159, 0.2);
+    color: white;
+
+    .header-content {
+      flex: 1;
+
+      .header-title {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 0.5rem;
+
+        .page-icon {
+          font-size: 2rem;
+          color: #ff83ec;
+          filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+        }
+
+        h1 {
+          margin: 0;
+          font-size: 2rem;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+        }
+      }
+
+      .page-description {
+        margin: 0;
+        font-size: 1rem;
+        opacity: 0.9;
+        margin-left: 3rem;
+      }
+    }
+
+    .btn-primary-custom {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.875rem 1.75rem;
+      background: rgba(255, 255, 255, 0.15);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.25);
+        border-color: rgba(255, 255, 255, 0.5);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      }
+
+      &:active {
+        transform: translateY(0);
+      }
+
+      svg {
+        font-size: 1.1rem;
+      }
+    }
+  }
+
+  .search-bar {
+    margin-bottom: 1.5rem;
+
+    .search-input {
+      width: 100%;
+      max-width: 500px;
+      padding: 0.875rem 1.25rem;
+      border: 2px solid rgba(155, 127, 168, 0.2);
+      border-radius: 12px;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      background: white;
+
+      &:focus {
+        outline: none;
+        border-color: #9b7fa8;
+        box-shadow: 0 0 0 3px rgba(155, 127, 168, 0.1);
+      }
+
+      &::placeholder {
+        color: rgba(0, 0, 0, 0.4);
+      }
+    }
+  }
+
+  .table-container {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    padding: 1rem;
+
+    .loading-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 2rem;
+      gap: 1rem;
+
+      .spinner-border {
+        width: 3rem;
+        height: 3rem;
+        color: #9b7fa8;
+      }
+
+      p {
+        margin: 0;
+        color: #666;
+        font-size: 1rem;
+      }
+    }
+
+    .no-data {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 2rem;
+      gap: 1rem;
+      color: #999;
+
+      svg {
+        color: rgba(155, 127, 168, 0.3);
+      }
+
+      p {
+        margin: 0;
+        font-size: 1.1rem;
+        color: #666;
+      }
+    }
+
+    .error-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 2rem;
+      gap: 1rem;
+
+      svg {
+        color: rgba(245, 87, 108, 0.5);
+      }
+
+      h3 {
+        margin: 0;
+        font-size: 1.5rem;
+        color: #f5576c;
+        font-weight: 600;
+      }
+
+      p {
+        margin: 0;
+        font-size: 1rem;
+        color: #666;
+        text-align: center;
+        max-width: 500px;
+      }
+
+      .btn-retry {
+        margin-top: 1rem;
+        padding: 0.75rem 2rem;
+        background: linear-gradient(135deg, #9b7fa8 0%, #8f749f 100%);
+        border: none;
+        color: white;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+
+        &:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(143, 116, 159, 0.4);
+        }
+
+        &:active {
+          transform: translateY(0);
+        }
+      }
+    }
+  }
+
+  // Estilos para badges de rol
+  .badge-rol {
+    padding: 0.35rem 0.75rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+
+    &.badge-rol-admin {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+      color: white;
+    }
+
+    &.badge-rol-manager {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      color: white;
+    }
+
+    &.badge-rol-user {
+      background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+      color: white;
+    }
+
+    &.badge-rol-tecnico {
+      background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+      color: white;
+    }
+  }
+
+  // Botones de acción
+  .action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+
+    .btn-action {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 0.95rem;
+
+      &:hover {
+        transform: scale(1.1);
+      }
+
+      &:active {
+        transform: scale(0.95);
+      }
+
+      &.btn-action-edit {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+
+        &:hover {
+          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+      }
+
+      &.btn-action-delete {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+
+        &:hover {
+          box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
+        }
+      }
+    }
+  }
+}
+
+// Responsive
+@media (max-width: 768px) {
+  .usuarios-page {
+    padding: 1rem;
+
+    .page-header {
+      flex-direction: column;
+      gap: 1.5rem;
+      padding: 1.5rem;
+
+      .header-content {
+        .header-title {
+          h1 {
+            font-size: 1.5rem;
+          }
+        }
+
+        .page-description {
+          margin-left: 2.5rem;
+          font-size: 0.9rem;
+        }
+      }
+
+      .btn-primary-custom {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+    .search-bar {
+      .search-input {
+        max-width: 100%;
+      }
+    }
+  }
+}
