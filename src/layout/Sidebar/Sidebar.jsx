@@ -9,7 +9,6 @@ import {
   faHome,
   faMoneyBill1,
   faQuestionCircle,
-  faScrewdriverWrench,
   faShop,
   faSignOutAlt,
   faTag,
@@ -42,6 +41,9 @@ const Sidebar = () => {
       toast.error("Error al cerrar sesión");
     }
   };
+
+  // Obtener el rol del usuario
+  // const userRole = user?.rol || "user";
 
   // ==========================
   // 🚨 Rutas permitidas por rol
@@ -93,6 +95,7 @@ const Sidebar = () => {
 
   return (
     <div className={`sidebar ${isCollapsed ? "collapsed" : ""}`}>
+      {/* Header Section */}
       <div className="top-section">
         {!isCollapsed && (
           <div className="logo">
@@ -100,40 +103,80 @@ const Sidebar = () => {
             <span>El y Ella TPV</span>
           </div>
         )}
-        <button className="toggle-btn" onClick={toggleSidebar}>
+        <button
+          className="toggle-btn"
+          onClick={toggleSidebar}
+          aria-label={isCollapsed ? "Expandir menú" : "Contraer menú"}
+        >
           <FontAwesomeIcon icon={isCollapsed ? faArrowRight : faArrowLeft} />
         </button>
       </div>
 
-      <div className={`sidebar-links ${isCollapsed ? "collapsed" : ""}`}>
+      {/* User Profile Section */}
+      {user && (
+        <div
+          className="user-profile"
+          title={
+            isCollapsed
+              ? `${user?.nombre || "Usuario"} - ${user?.rol || "user"}`
+              : ""
+          }
+        >
+          <div className="user-avatar">
+            {user?.nombre?.charAt(0)?.toUpperCase() ||
+              user?.email?.charAt(0)?.toUpperCase() ||
+              "U"}
+          </div>
+          {!isCollapsed && (
+            <div className="user-info">
+              <span className="user-name">{user?.nombre || "Usuario"}</span>
+              <span className="user-role">{user?.rol || "user"}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Main Navigation */}
+      <nav className="sidebar-links">
         {menuPermitido.map((item) => (
           <NavLink
             key={item.route}
             to={item.route}
-            className="nav-link"
-            activeclassname="active"
+            className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
+            title={isCollapsed ? item.title : ""}
           >
             <FontAwesomeIcon icon={item.icon} className="icon" />
             {!isCollapsed && <span className="title">{item.title}</span>}
           </NavLink>
         ))}
-      </div>
+      </nav>
 
-      {!isCollapsed && (
-        <div className="bottom-section">
-          {bottomMenuItems.map((item) => (
-            <div key={item.title} className="nav-link bottom-link">
+      {/* Bottom Menu */}
+      <div className="bottom-section">
+        {bottomMenuItems.map((item) =>
+          item.action === "logout" ? (
+            <button
+              key={item.title}
+              className="nav-link bottom-link logout-btn"
+              onClick={handleLogout}
+              title={isCollapsed ? item.title : ""}
+            >
               <FontAwesomeIcon icon={item.icon} className="icon" />
-              <span
-                className="title"
-                onClick={item.action === "logout" ? handleLogout : undefined}
-              >
-                {item.title}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+              {!isCollapsed && <span className="title">{item.title}</span>}
+            </button>
+          ) : (
+            <NavLink
+              key={item.title}
+              to={item.route}
+              className="nav-link bottom-link"
+              title={isCollapsed ? item.title : ""}
+            >
+              <FontAwesomeIcon icon={item.icon} className="icon" />
+              {!isCollapsed && <span className="title">{item.title}</span>}
+            </NavLink>
+          )
+        )}
+      </div>
     </div>
   );
 };
