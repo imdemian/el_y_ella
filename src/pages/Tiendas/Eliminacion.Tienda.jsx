@@ -1,184 +1,194 @@
 import { useEffect, useState } from "react";
-import { obtenerEmpleados } from "../../services/empleadoService";
-import { eliminarTienda } from "../../services/tiendaService";
+import { TiendaService } from "../../services/supabase/tiendaService";
 import { toast } from "react-toastify";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faExclamationTriangle,
+  faStore,
+  faMapMarkerAlt,
+  faPhone,
+  faToggleOn,
+  faToggleOff,
+} from "@fortawesome/free-solid-svg-icons";
+import "./Eliminacion.Tienda.scss";
 
-const EliminacionTienda = ({ tienda, setShow }) => {
+const EliminacionTienda = ({ tienda, setShow, refetch }) => {
+  const [loading, setLoading] = useState(false);
+  const [alertMessage] = useState("");
+  const [showConfirmation, setShowConfirmation] = useState(false);
+
   // Inicializar los datos
-  const [formData, setFormData] = useState({
+  const [formData] = useState({
     nombre: tienda?.nombre || "",
     direccion: tienda?.direccion || "",
     telefono: tienda?.telefono || "",
-    encargado: tienda?.encargado || "",
+    activa: tienda?.activa,
   });
-  const [alertMessage, setAlertMessage] = useState("");
 
-  // Mensajes de confirmación de eliminación
-  const confirmDeleteMessage =
-    "¿Estás seguro de que deseas eliminar esta tienda? \n Esta acción no se puede deshacer.";
-  const [onPressedConfirmation, setOnPressedConfirmation] = useState(false);
-
-  // Función para verificar que no haya empleados
+  // Función para verificar que no haya empleados (opcional, si tienes esta validación)
   const verificarEmpleados = async () => {
     try {
-      const response = await obtenerEmpleados();
-      let empleadosAsignados = response.some(
-        (emp) => emp.tiendaId === tienda.id
-      );
-      if (empleadosAsignados) {
-        setAlertMessage(
-          "No se puede eliminar la tienda porque tiene empleados asignados."
-        );
-      }
+      // Si tienes un servicio de empleados, puedes verificar aquí
+      // const empleados = await EmpleadoService.obtenerEmpleados();
+      // const empleadosAsignados = empleados.some(emp => emp.tiendaId === tienda.id);
+      // if (empleadosAsignados) {
+      //   setAlertMessage("No se puede eliminar la tienda porque tiene empleados asignados.");
+      // }
     } catch (error) {
       console.log(error);
     }
   };
 
   useEffect(() => {
-    // Verificar si hay empleados asignados a la tienda
     verificarEmpleados();
-  });
+  }, []);
 
-  // Función para eliminar la tienda
+  // Función para desactivar la tienda (soft delete)
   const handleDelete = async () => {
-    if (!alertMessage) {
-      try {
-        let response = await eliminarTienda(tienda.id);
-        if (response.success) {
-          toast.success("Tienda eliminada exitosamente");
-          setFormData({
-            nombre: "",
-            direccion: "",
-            telefono: "",
-            encargado: "",
-          });
-          setAlertMessage("");
-        } else {
-          setAlertMessage("Error al eliminar la tienda: " + response.message);
-        }
-      } catch (err) {
-        let errorMessage = err.response?.data?.message || "Error desconocido";
-        toast.error("No se pudo eliminar la tienda: " + errorMessage);
+    if (alertMessage) return;
+
+    setLoading(true);
+    try {
+      await TiendaService.desactivarTienda(tienda.id);
+      toast.success("✅ Tienda desactivada exitosamente");
+
+      // Recargar la lista antes de cerrar el modal
+      if (refetch) {
+        await refetch();
       }
-      console.log("Tienda eliminada");
-      setShow(false); // Cerrar el modal o componente
+
+      setShow(false);
+    } catch (error) {
+      console.error("Error al desactivar tienda:", error);
+      toast.error(error.message || "Error al desactivar la tienda");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="eliminacion-empleado-container">
-      <div className="row mb-3 align-items-center">
-        {alertMessage && (
-          <div
-            className="alert alert-danger d-flex justify-content-center align-items-center"
-            role="alert"
-          >
-            <h3 className="mb-0">{alertMessage}</h3>
+    <div className="eliminacion-tienda-modal">
+      <div className="warning-header">
+        <FontAwesomeIcon
+          icon={faExclamationTriangle}
+          className="warning-icon"
+        />
+        <h3>Desactivar Tienda</h3>
+      </div>
+
+      <div className="warning-message">
+        {alertMessage ? (
+          <div className="alert alert-danger">
+            <p>{alertMessage}</p>
           </div>
+        ) : (
+          <>
+            <p>¿Estás seguro de que deseas desactivar la siguiente tienda?</p>
+            <p className="warning-text">
+              La tienda será marcada como inactiva pero sus datos se
+              conservarán.
+            </p>
+          </>
         )}
-        <div className="col-md-2 d-flex align-items-center">
-          <label htmlFor="nombre" className="form-label m-0">
-            Nombre
-          </label>
+      </div>
+
+      <div className="tienda-info">
+        <div className="info-item">
+          <FontAwesomeIcon icon={faStore} className="info-icon" />
+          <div>
+            <label>Nombre</label>
+            <p>{formData.nombre}</p>
+          </div>
         </div>
-        <div className="col-md-10">
-          <input
-            id="nombre"
-            name="nombre"
-            type="text"
-            className="form-control"
-            value={formData.nombre}
-            disabled
-            readOnly
+
+        <div className="info-item">
+          <FontAwesomeIcon icon={faMapMarkerAlt} className="info-icon" />
+          <div>
+            <label>Dirección</label>
+            <p>{formData.direccion || "Sin dirección"}</p>
+          </div>
+        </div>
+
+        <div className="info-item">
+          <FontAwesomeIcon icon={faPhone} className="info-icon" />
+          <div>
+            <label>Teléfono</label>
+            <p>{formData.telefono || "Sin teléfono"}</p>
+          </div>
+        </div>
+
+        <div className="info-item">
+          <FontAwesomeIcon
+            icon={formData.activa ? faToggleOn : faToggleOff}
+            className="info-icon"
           />
+          <div>
+            <label>Estado Actual</label>
+            <p
+              className={`badge-estado ${
+                formData.activa ? "badge-activa" : "badge-inactiva"
+              }`}
+            >
+              {formData.activa ? "Activa" : "Inactiva"}
+            </p>
+          </div>
         </div>
       </div>
 
-      <div className="row mb-3 align-items-center">
-        <div className="col-md-2">
-          <label htmlFor="direccion" className="form-label m-0">
-            Dirección
-          </label>
-        </div>
-        <div className="col-md-10">
-          <textarea
-            id="direccion"
-            name="direccion"
-            className="form-control"
-            rows={3}
-            value={formData.direccion}
-            disabled
-            readOnly
-          />
-        </div>
-      </div>
-
-      <div className="row mb-3 align-items-center">
-        <div className="col-md-2">
-          <label htmlFor="telefono" className="form-label m-0">
-            Teléfono
-          </label>
-        </div>
-        <div className="col-md-10">
-          <input
-            id="telefono"
-            name="telefono"
-            type="text"
-            className="form-control"
-            value={formData.telefono}
-            disabled
-            readOnly
-          />
-        </div>
-      </div>
-
-      <div className="row mb-3 align-items-center">
-        <div className="col-md-2">
-          <label htmlFor="encargado" className="form-label m-0">
-            Encargado
-          </label>
-        </div>
-        <div className="col-md-10">
-          <input
-            id="encargado"
-            name="encargado"
-            type="text"
-            className="form-control"
-            value={formData.encargado}
-            disabled
-            readOnly
-          />
-        </div>
-      </div>
-
-      <div className="row">
-        <div className="col-12 justify-content-center d-flex">
+      {!showConfirmation ? (
+        <div className="form-actions">
           <button
-            className="btn btn-danger"
-            onClick={() => setOnPressedConfirmation(true)}
-            disabled={!!alertMessage}
+            type="button"
+            className="btn-cancel"
+            onClick={() => setShow(false)}
+            disabled={loading}
           >
-            Eliminar
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="btn-delete"
+            onClick={() => setShowConfirmation(true)}
+            disabled={!!alertMessage || loading}
+          >
+            Desactivar Tienda
           </button>
         </div>
-        {onPressedConfirmation && (
-          <div className="row mt-3 justify-content-center d-flex">
-            <p className="text-bg-danger">{confirmDeleteMessage}</p>
-            <div className="d-flex justify-content-between align-items-center">
-              <button className="btn btn-danger" onClick={() => handleDelete()}>
-                Confirmar
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setOnPressedConfirmation(false)}
-              >
-                Cancelar
-              </button>
-            </div>
+      ) : (
+        <div className="confirmation-section">
+          <div className="confirmation-message">
+            <p>
+              <strong>¿Confirmas que deseas desactivar esta tienda?</strong>
+            </p>
+            <p>Esta acción cambiará el estado de la tienda a inactiva.</p>
           </div>
-        )}
-      </div>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn-cancel"
+              onClick={() => setShowConfirmation(false)}
+              disabled={loading}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn-confirm-delete"
+              onClick={handleDelete}
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <span className="spinner" />
+                  Desactivando...
+                </>
+              ) : (
+                "Confirmar Desactivación"
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

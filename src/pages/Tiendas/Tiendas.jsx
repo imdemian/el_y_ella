@@ -1,19 +1,25 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { obtenerTiendas } from "../../services/tiendaService";
+import { TiendaService } from "../../services/supabase/tiendaService";
 import RegistroTiendas from "./RegistroTiendas";
 import DataTable from "react-data-table-component";
 import BasicModal from "../../components/BasicModal/BasicModal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-  faPenSquare,
+  faPen,
   faTrashCan,
   faWarehouse,
+  faStore,
+  faPlus,
 } from "@fortawesome/free-solid-svg-icons";
 import EliminacionTienda from "./Eliminacion.Tienda";
+import "./Tiendas.scss";
 
 export default function TiendasScreen() {
   const [tiendas, setTiendas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [filterText, setFilterText] = useState("");
 
   // Modals
   const [showModal, setShowModal] = useState(false);
@@ -25,7 +31,13 @@ export default function TiendasScreen() {
 
   // Registrar tienda
   const registrarTiendas = () => {
-    setContentModal(<RegistroTiendas tienda={null} setShow={setShowModal} />);
+    setContentModal(
+      <RegistroTiendas
+        tienda={null}
+        setShow={setShowModal}
+        refetch={cargarTiendas}
+      />
+    );
     setModalTitle("Registrar Tienda");
     setSize("md");
     setShowModal(true);
@@ -33,7 +45,13 @@ export default function TiendasScreen() {
 
   // Editar tienda
   const handleEdit = useCallback((tienda) => {
-    setContentModal(<RegistroTiendas tienda={tienda} setShow={setShowModal} />);
+    setContentModal(
+      <RegistroTiendas
+        tienda={tienda}
+        setShow={setShowModal}
+        refetch={cargarTiendas}
+      />
+    );
     setModalTitle("Editar Tienda");
     setSize("md");
     setShowModal(true);
@@ -42,7 +60,11 @@ export default function TiendasScreen() {
   // Eliminar tienda
   const handleDelete = useCallback((tienda) => {
     setContentModal(
-      <EliminacionTienda tienda={tienda} setShow={setShowModal} />
+      <EliminacionTienda
+        tienda={tienda}
+        setShow={setShowModal}
+        refetch={cargarTiendas}
+      />
     );
     setModalTitle("Eliminar Tienda");
     setSize("md");
@@ -59,62 +81,93 @@ export default function TiendasScreen() {
 
   useEffect(() => {
     cargarTiendas();
-  }, [showModal]);
+  }, []);
 
   const cargarTiendas = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const data = await obtenerTiendas();
-      const lista = Array.isArray(data)
-        ? data
-        : Array.isArray(data.tiendas)
-        ? data.tiendas
-        : Array.isArray(data.data)
-        ? data.data
-        : Object.values(data);
-      setTiendas(lista);
+      const data = await TiendaService.obtenerTiendas();
+      setTiendas(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error al cargar tiendas:", error);
+      setError(error.message);
       setTiendas([]);
+    } finally {
+      setLoading(false);
     }
   };
 
+  const tiendasFiltradas = useMemo(() => {
+    if (!filterText) return tiendas;
+    return tiendas.filter(
+      (tienda) =>
+        tienda.nombre?.toLowerCase().includes(filterText.toLowerCase()) ||
+        tienda.direccion?.toLowerCase().includes(filterText.toLowerCase()) ||
+        tienda.telefono?.toLowerCase().includes(filterText.toLowerCase())
+    );
+  }, [tiendas, filterText]);
+
   const columns = useMemo(
     () => [
-      { name: "Nombre", selector: (row) => row.nombre, sortable: true },
-      { name: "Dirección", selector: (row) => row.direccion, sortable: true },
+      {
+        name: "Nombre",
+        selector: (row) => row.nombre,
+        sortable: true,
+        grow: 2,
+      },
+      {
+        name: "Dirección",
+        selector: (row) => row.direccion || "-",
+        sortable: true,
+        grow: 2,
+      },
       {
         name: "Teléfono",
         selector: (row) => row.telefono || "-",
         sortable: true,
       },
       {
-        name: "Encargado",
-        selector: (row) => row.encargado || "-",
+        name: "Estado",
+        selector: (row) => row.activa,
         sortable: true,
+        cell: (row) => (
+          <span
+            className={`badge-estado ${
+              row.activa ? "badge-activa" : "badge-inactiva"
+            }`}
+          >
+            {row.activa ? "Activa" : "Inactiva"}
+          </span>
+        ),
       },
       {
         name: "Acciones",
+        center: true,
         cell: (row) => (
-          <>
+          <div className="action-buttons">
             <button
-              className="btn btn-sm btn-outline-secondary me-2"
+              className="btn-action btn-action-edit"
               onClick={() => handleEdit(row)}
+              title="Editar tienda"
             >
-              <FontAwesomeIcon icon={faPenSquare} />
+              <FontAwesomeIcon icon={faPen} />
             </button>
             <button
-              className="btn btn-sm btn-outline-danger me-2"
+              className="btn-action btn-action-delete"
               onClick={() => handleDelete(row)}
+              title="Eliminar tienda"
             >
               <FontAwesomeIcon icon={faTrashCan} />
             </button>
             <button
-              className="btn btn-sm btn-outline-primary"
+              className="btn-action btn-action-inventory"
               onClick={() => handleInventory(row)}
+              title="Ver inventario"
             >
-              <FontAwesomeIcon icon={faWarehouse} /> Inventario
+              <FontAwesomeIcon icon={faWarehouse} />
             </button>
-          </>
+          </div>
         ),
         ignoreRowClick: true,
       },
@@ -122,22 +175,108 @@ export default function TiendasScreen() {
     [handleEdit, handleDelete, handleInventory]
   );
 
+  const customStyles = {
+    headRow: {
+      style: {
+        backgroundColor: "rgba(155, 127, 168, 0.05)",
+        borderBottom: "2px solid rgba(155, 127, 168, 0.2)",
+        minHeight: "56px",
+      },
+    },
+    headCells: {
+      style: {
+        fontSize: "0.95rem",
+        fontWeight: "600",
+        color: "#8f749f",
+        paddingLeft: "16px",
+        paddingRight: "16px",
+      },
+    },
+    rows: {
+      style: {
+        minHeight: "60px",
+        fontSize: "0.9rem",
+        color: "#333",
+        borderBottom: "1px solid rgba(0, 0, 0, 0.05)",
+        transition: "all 0.2s ease",
+        "&:hover": {
+          backgroundColor: "rgba(155, 127, 168, 0.05)",
+          transform: "scale(1.01)",
+        },
+      },
+    },
+    pagination: {
+      style: {
+        borderTop: "2px solid rgba(155, 127, 168, 0.2)",
+        minHeight: "56px",
+      },
+    },
+  };
+
   return (
-    <div className="container mt-4">
-      <div className="mb-3 d-flex justify-content-between align-items-center">
-        <h2>Tiendas</h2>
-        <button className="btn btn-primary" onClick={registrarTiendas}>
-          Registrar Tienda
+    <div className="tiendas-page">
+      <div className="page-header">
+        <div className="header-content">
+          <div className="header-title">
+            <FontAwesomeIcon icon={faStore} className="page-icon" />
+            <h1>Tiendas</h1>
+          </div>
+          <p className="page-description">Administra las tiendas del sistema</p>
+        </div>
+        <button className="btn-primary-custom" onClick={registrarTiendas}>
+          <FontAwesomeIcon icon={faPlus} />
+          <span>Nueva Tienda</span>
         </button>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={tiendas}
-        pagination
-        highlightOnHover
-        responsive
-      />
+      {/* Barra de búsqueda */}
+      <div className="search-bar">
+        <input
+          type="text"
+          placeholder="Buscar por nombre, dirección o teléfono..."
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+          className="search-input"
+        />
+      </div>
+
+      {/* Tabla de tiendas */}
+      <div className="table-container">
+        {loading ? (
+          <div className="loading-container">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Cargando...</span>
+            </div>
+            <p>Cargando tiendas...</p>
+          </div>
+        ) : error ? (
+          <div className="error-container">
+            <div className="error-icon">⚠️</div>
+            <h3>Error al cargar tiendas</h3>
+            <p>{error}</p>
+            <button className="btn-retry" onClick={cargarTiendas}>
+              Reintentar
+            </button>
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={tiendasFiltradas}
+            pagination
+            paginationPerPage={10}
+            paginationRowsPerPageOptions={[10, 20, 30, 50]}
+            highlightOnHover
+            responsive
+            customStyles={customStyles}
+            noDataComponent={
+              <div className="no-data">
+                <FontAwesomeIcon icon={faStore} className="no-data-icon" />
+                <p>No hay tiendas registradas</p>
+              </div>
+            }
+          />
+        )}
+      </div>
 
       <BasicModal
         show={showModal}

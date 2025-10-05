@@ -1,120 +1,166 @@
 import React, { useState } from "react";
-import { actualizarTienda, crearTienda } from "../../services/tiendaService";
+import { TiendaService } from "../../services/supabase/tiendaService";
 import { toast } from "react-toastify";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faStore,
+  faMapMarkerAlt,
+  faPhone,
+  faToggleOn,
+  faToggleOff,
+} from "@fortawesome/free-solid-svg-icons";
+import "./RegistroTiendas.scss";
 
-export default function RegistroTiendas({ tienda, setShow }) {
+export default function RegistroTiendas({ tienda, setShow, refetch }) {
+  const isEdit = !!tienda;
+
   const [form, setForm] = useState({
     nombre: tienda?.nombre || "",
     direccion: tienda?.direccion || "",
     telefono: tienda?.telefono || "",
-    encargado: tienda?.encargado || "",
+    activa: tienda?.activa !== undefined ? tienda.activa : true,
   });
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value, type, checked } = e.target;
+    setForm({
+      ...form,
+      [name]: type === "checkbox" ? checked : value,
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
+
     try {
-      if (tienda?.id) await actualizarTienda(tienda.id, form);
-      else await crearTienda(form);
-      resetForm();
-      toast.success("Tienda guardada correctamente");
+      if (isEdit) {
+        await TiendaService.actualizarTienda(tienda.id, form);
+        toast.success("✅ Tienda actualizada correctamente");
+      } else {
+        await TiendaService.crearTienda(form);
+        toast.success("✅ Tienda registrada correctamente");
+      }
       setShow(false);
+      if (refetch) refetch();
     } catch (error) {
       console.error("Error al guardar tienda:", error);
-      toast.error("No se pudo guardar la tienda");
+      toast.error(error.message || "Error al procesar la solicitud");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const resetForm = () => {
-    setForm({ nombre: "", direccion: "", telefono: "", encargado: "" });
-  };
-
   return (
-    <form onSubmit={handleSubmit}>
-      <div className="row mb-3 align-items-center">
-        <div className="col-md-2 d-flex align-items-center">
-          <label htmlFor="nombre" className="form-label m-0">
-            Nombre
+    <div className="registro-tienda-form">
+      <div className="form-header">
+        <h3>{isEdit ? "Editar Tienda" : "Registrar Nueva Tienda"}</h3>
+        <p className="form-subtitle">
+          {isEdit
+            ? "Actualiza la información de la tienda"
+            : "Completa los datos para crear una nueva tienda"}
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label htmlFor="nombre" className="form-label">
+            <FontAwesomeIcon icon={faStore} /> Nombre de la Tienda
           </label>
-        </div>
-        <div className="col-md-10">
           <input
+            type="text"
             id="nombre"
             name="nombre"
-            type="text"
-            className="form-control"
+            placeholder="Ej: Tienda Centro"
             value={form.nombre}
             onChange={handleChange}
             required
+            className="form-input"
           />
         </div>
-      </div>
 
-      <div className="row mb-3 align-items-center">
-        <div className="col-md-2">
-          <label htmlFor="direccion" className="form-label m-0">
-            Dirección
+        <div className="form-group">
+          <label htmlFor="direccion" className="form-label">
+            <FontAwesomeIcon icon={faMapMarkerAlt} /> Dirección
           </label>
-        </div>
-        <div className="col-md-10">
           <textarea
             id="direccion"
             name="direccion"
-            className="form-control"
-            rows={3}
+            placeholder="Ej: Av. Principal #123, Col. Centro"
             value={form.direccion}
             onChange={handleChange}
-            required
+            className="form-textarea"
+            rows={3}
           />
         </div>
-      </div>
 
-      <div className="row mb-3 align-items-center">
-        <div className="col-md-2">
-          <label htmlFor="telefono" className="form-label m-0">
-            Teléfono
+        <div className="form-group">
+          <label htmlFor="telefono" className="form-label">
+            <FontAwesomeIcon icon={faPhone} /> Teléfono
           </label>
-        </div>
-        <div className="col-md-10">
           <input
+            type="tel"
             id="telefono"
             name="telefono"
-            type="text"
-            className="form-control"
+            placeholder="Ej: 555-1234"
             value={form.telefono}
             onChange={handleChange}
+            className="form-input"
           />
         </div>
-      </div>
 
-      <div className="row mb-3 align-items-center">
-        <div className="col-md-2">
-          <label htmlFor="encargado" className="form-label m-0">
-            Encargado
-          </label>
-        </div>
-        <div className="col-md-10">
-          <input
-            id="encargado"
-            name="encargado"
-            type="text"
-            className="form-control"
-            value={form.encargado}
-            onChange={handleChange}
-          />
-        </div>
-      </div>
+        {isEdit && (
+          <div className="form-group">
+            <label className="form-label-switch">
+              <div className="switch-info">
+                <FontAwesomeIcon
+                  icon={form.activa ? faToggleOn : faToggleOff}
+                  className={`switch-icon ${form.activa ? "active" : ""}`}
+                />
+                <span>Estado de la Tienda</span>
+              </div>
+              <div className="switch-container">
+                <input
+                  type="checkbox"
+                  id="activa"
+                  name="activa"
+                  checked={form.activa}
+                  onChange={handleChange}
+                  className="switch-checkbox"
+                />
+                <label htmlFor="activa" className="switch-label">
+                  <span className="switch-button"></span>
+                </label>
+                <span className="switch-status">
+                  {form.activa ? "Activa" : "Inactiva"}
+                </span>
+              </div>
+            </label>
+          </div>
+        )}
 
-      <div className="row">
-        <div className="col-12">
-          <button type="submit" className="btn btn-primary w-100">
-            {tienda ? "Actualizar" : "Registrar"}
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn-cancel"
+            onClick={() => setShow(false)}
+            disabled={loading}
+          >
+            Cancelar
+          </button>
+          <button type="submit" className="btn-submit" disabled={loading}>
+            {loading ? (
+              <>
+                <span className="spinner" />
+                {isEdit ? "Actualizando..." : "Registrando..."}
+              </>
+            ) : (
+              <>{isEdit ? "Actualizar Tienda" : "Registrar Tienda"}</>
+            )}
           </button>
         </div>
-      </div>
-    </form>
+      </form>
+    </div>
   );
 }

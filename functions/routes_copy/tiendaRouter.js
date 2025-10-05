@@ -5,6 +5,7 @@ import {
   authenticateToken,
   requireRole,
 } from "../middlewares/authMiddleware.js";
+import { FALSE } from "sass";
 
 const router = express.Router();
 
@@ -144,17 +145,18 @@ router.put(
       const { id } = req.params;
       const { nombre, direccion, telefono, activa } = req.body;
 
-      if (!nombre) {
+      // Si solo se está cambiando el estado activa, no requerir nombre
+      if (!nombre && activa === undefined) {
         return res.status(400).json({
           success: false,
-          message: "El nombre de la tienda es requerido",
+          message: "Debe proporcionar al menos un campo para actualizar",
         });
       }
 
       // Verificar que la tienda existe
       const { data: tiendaExistente } = await supabase
         .from("tiendas")
-        .select("id")
+        .select("*")
         .eq("id", id)
         .single();
 
@@ -165,31 +167,37 @@ router.put(
         });
       }
 
-      // Verificar duplicados (excluyendo la actual)
-      const { data: duplicado } = await supabase
-        .from("tiendas")
-        .select("id")
-        .eq("nombre", nombre)
-        .neq("id", id)
-        .single();
+      // Verificar duplicados solo si se está cambiando el nombre
+      if (nombre && nombre !== tiendaExistente.nombre) {
+        const { data: duplicado } = await supabase
+          .from("tiendas")
+          .select("id")
+          .eq("nombre", nombre)
+          .neq("id", id)
+          .single();
 
-      if (duplicado) {
-        return res.status(400).json({
-          success: false,
-          message: "Ya existe otra tienda con ese nombre",
-        });
+        if (duplicado) {
+          return res.status(400).json({
+            success: false,
+            message: "Ya existe otra tienda con ese nombre",
+          });
+        }
       }
+
+      // Preparar datos para actualizar
+      const updateData = {
+        updated_at: new Date(),
+      };
+
+      if (nombre !== undefined) updateData.nombre = nombre;
+      if (direccion !== undefined) updateData.direccion = direccion || "";
+      if (telefono !== undefined) updateData.telefono = telefono || "";
+      if (activa !== undefined) updateData.activa = activa;
 
       // Actualizar tienda
       const { data: tiendaActualizada, error: errorActualizar } = await supabase
         .from("tiendas")
-        .update({
-          nombre: nombre,
-          direccion: direccion || "",
-          telefono: telefono || "",
-          activa: activa !== undefined ? activa : true,
-          updated_at: new Date(),
-        })
+        .update(updateData)
         .eq("id", id)
         .select()
         .single();
@@ -206,6 +214,122 @@ router.put(
         success: false,
         message: "Error al actualizar tienda",
         error: error.message,
+      });
+    }
+  }
+);
+
+// Desactivar tienda (soft delete)
+router.patch(
+  "/:id/desactivar",
+  authenticateToken,
+  requireRole(["admin"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Verificar que la tienda existe
+      const { data: tiendaExistente, error: errorBuscar } = await supabase
+        .from("tiendas")
+        .select("*")
+        .eq("id", id);
+
+      if (errorBuscar) throw errorBuscar;
+
+      if (!tiendaExistente || tiendaExistente.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Tienda no encontrada",
+        });
+      }
+
+      // Desactivar tienda
+      const { data: tiendaDesactivada, error: errorActualizar } = await supabase
+        .from("tiendas")
+        .update({
+          activa: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select();
+
+      if (errorActualizar) throw errorActualizar;
+
+      if (!tiendaDesactivada || tiendaDesactivada.length === 0) {
+        return res.status(500).json({
+          success: false,
+          message: "No se pudo desactivar la tienda",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: tiendaDesactivada[0],
+        message: "Tienda desactivada exitosamente",
+      });
+    } catch (error) {
+      console.error("Error desactivando tienda:", error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Error al desactivar tienda",
+      });
+    }
+  }
+);
+
+// Reactivar tienda
+router.patch(
+  "/:id/reactivar",
+  authenticateToken,
+  requireRole(["admin"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Verificar que la tienda existe
+      const { data: tiendaExistente, error: errorBuscar } = await supabase
+        .from("tiendas")
+        .select("*")
+        .eq("id", id);
+
+      if (errorBuscar) throw errorBuscar;
+
+      if (!tiendaExistente || tiendaExistente.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Tienda no encontrada",
+        });
+      }
+
+      // Reactivar tienda
+      const { data: tiendaReactivada, error: errorActualizar } = await supabase
+        .from("tiendas")
+        .update({
+          activa: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select();
+
+      if (errorActualizar) throw errorActualizar;
+
+      if (!tiendaReactivada || tiendaReactivada.length === 0) {
+        return res.status(500).json({
+          success: false,
+          message: "No se pudo reactivar la tienda",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: tiendaReactivada[0],
+        message: "Tienda reactivada exitosamente",
+      });
+    } catch (error) {
+      console.error("Error reactivando tienda:", error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Error al reactivar tienda",
       });
     }
   }
