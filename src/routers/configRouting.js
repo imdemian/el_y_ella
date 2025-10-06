@@ -1,3 +1,4 @@
+import Ajustes from "../pages/Ajustes/Ajustes";
 import CodigosBarra from "../pages/CodigosBarra/CodigosBarra";
 import Empleados from "../pages/Empleados/Empleados";
 import Home from "../pages/Home/Home";
@@ -49,6 +50,11 @@ const configRouting = [
   {
     path: "/productos",
     page: ProductosScreen,
+    roles: ["admin"],
+  },
+  {
+    path: "/ajustes",
+    page: Ajustes,
     roles: ["admin"],
   },
   {

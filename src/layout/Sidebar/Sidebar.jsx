@@ -5,9 +5,9 @@ import {
   faBars,
   faBoxesStacked,
   faChildDress,
+  faCog,
   faHome,
   faMoneyBill1,
-  faQuestionCircle,
   faShop,
   faSignOutAlt,
   faTag,
@@ -85,7 +85,7 @@ const Sidebar = () => {
   // 🔽 Menú inferior (sin filtro)
   // ==========================
   const bottomMenuItems = [
-    { title: "Ayuda", route: "/help", icon: faQuestionCircle, action: null },
+    { title: "Ajustes", route: "/ajustes", icon: faCog, action: null },
     { title: "Salir", route: "/login", icon: faSignOutAlt, action: "logout" },
   ];
 
