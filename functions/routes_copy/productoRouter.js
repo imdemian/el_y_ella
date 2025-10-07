@@ -1,8 +1,15 @@
 // functions/routes/productoRouter.js
 import express from "express";
 import { supabase } from "../config/supabase.js";
+import {
+  authenticateToken,
+  requireRole,
+} from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
+
+// Aplicar autenticación a todas las rutas
+router.use(authenticateToken);
 
 // GET /productos - Lista paginada con filtros
 router.get("/", async (req, res) => {
@@ -80,7 +87,10 @@ router.get("/", async (req, res) => {
     // Ejecutar query
     const { data: productos, error, count } = await query;
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error al obtener productos:", error.message);
+      throw error;
+    }
 
     // Calcular metadata de paginación
     const totalPages = Math.ceil(count / limitInt);
@@ -106,6 +116,7 @@ router.get("/", async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error en GET /productos:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -134,18 +145,22 @@ router.get("/:id", async (req, res) => {
       .eq("id", id)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error al obtener producto:", error.message);
+      throw error;
+    }
     if (!producto)
       return res.status(404).json({ error: "Producto no encontrado" });
 
     res.json(producto);
   } catch (error) {
+    console.error("Error en GET /productos/:id:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
 
 // POST /productos - Crear producto con sus variantes (OPTIMIZADO)
-router.post("/", async (req, res) => {
+router.post("/", requireRole(["admin", "manager"]), async (req, res) => {
   try {
     const { producto, variantes } = req.body;
 
@@ -172,7 +187,10 @@ router.post("/", async (req, res) => {
       .select()
       .single();
 
-    if (errorProducto) throw errorProducto;
+    if (errorProducto) {
+      console.error("Error al crear producto:", errorProducto.message);
+      throw errorProducto;
+    }
 
     // Crear variantes si existen (en lote)
     if (variantes && variantes.length > 0) {
@@ -189,7 +207,10 @@ router.post("/", async (req, res) => {
         .from("variantes_producto")
         .insert(variantesConProductoId);
 
-      if (errorVariantes) throw errorVariantes;
+      if (errorVariantes) {
+        console.error("Error al crear variantes:", errorVariantes.message);
+        throw errorVariantes;
+      }
     }
 
     // Obtener producto completo con variantes (query optimizada)
@@ -212,10 +233,14 @@ router.post("/", async (req, res) => {
       .eq("id", nuevoProducto.id)
       .single();
 
-    if (errorFinal) throw errorFinal;
+    if (errorFinal) {
+      console.error("Error al obtener producto completo:", errorFinal.message);
+      throw errorFinal;
+    }
 
     res.status(201).json(productoCompleto);
   } catch (error) {
+    console.error("Error en POST /productos:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -252,10 +277,14 @@ router.get("/search/quick", async (req, res) => {
       .limit(parseInt(limit))
       .order("nombre");
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error en búsqueda rápida:", error.message);
+      throw error;
+    }
 
     res.json(productos);
   } catch (error) {
+    console.error("Error en GET /productos/search/quick:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -276,7 +305,10 @@ router.get("/stats/overview", async (req, res) => {
       )
       .eq("activo", true);
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error al obtener estadísticas:", error.message);
+      throw error;
+    }
 
     const totalProductos = stats.length;
     const totalVariantes = stats.reduce(
@@ -300,12 +332,13 @@ router.get("/stats/overview", async (req, res) => {
       productos_activos: totalProductos,
     });
   } catch (error) {
+    console.error("Error en GET /productos/stats/overview:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
 
 // PUT /productos/:id - Actualizar producto
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireRole(["admin", "manager"]), async (req, res) => {
   try {
     const { id } = req.params;
     const { nombre, descripcion, categoria_id, precio_base, marca, activo } =
@@ -333,18 +366,22 @@ router.put("/:id", async (req, res) => {
       )
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error al actualizar producto:", error.message);
+      throw error;
+    }
     if (!producto)
       return res.status(404).json({ error: "Producto no encontrado" });
 
     res.json(producto);
   } catch (error) {
+    console.error("Error en PUT /productos/:id:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
 
 // DELETE /productos/:id - Eliminar producto (soft delete)
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireRole(["admin"]), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -359,7 +396,10 @@ router.delete("/:id", async (req, res) => {
       .select("id")
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error al desactivar producto:", error.message);
+      throw error;
+    }
     if (!producto)
       return res.status(404).json({ error: "Producto no encontrado" });
 
@@ -368,6 +408,7 @@ router.delete("/:id", async (req, res) => {
       id: producto.id,
     });
   } catch (error) {
+    console.error("Error en DELETE /productos/:id:", error.message);
     res.status(500).json({ error: error.message });
   }
 });

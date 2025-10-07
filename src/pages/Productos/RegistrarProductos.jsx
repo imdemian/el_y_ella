@@ -1,351 +1,333 @@
+// src/pages/Productos/RegistrarProductos.jsx
 import React, { useEffect, useState } from "react";
-import {
-  crearProducto,
-  actualizarProducto,
-  obtenerProducto,
-} from "../../services/productoService";
-import { obtenerCategorias } from "../../services/categoriaService";
+import { ProductoService } from "../../services/supabase/productoService";
+import { CategoriaService } from "../../services/supabase/categoriaService";
 import { toast } from "react-toastify";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faBox,
+  faFileAlt,
+  faLayerGroup,
+  faDollarSign,
+  faSpinner,
+  faCog,
+  faTrash,
+  faBarcode,
+  faTags,
+  faMagic,
+  faCheck,
+} from "@fortawesome/free-solid-svg-icons";
+import "./RegistrarProductos.scss";
 
-// ---------- Utils ----------
-const ATTR_EXCLUDE = new Set(["id", "sku", "barcode", "precio"]);
+// Catálogo de tallas y colores predefinidos
+const TALLAS_DISPONIBLES = ["XS", "S", "M", "L", "XL", "XXL"];
+const COLORES_DISPONIBLES = [
+  "Negro",
+  "Blanco",
+  "Azul",
+  "Rojo",
+  "Verde",
+  "Amarillo",
+  "Rosa",
+  "Gris",
+  "Café",
+  "Morado",
+];
 
-const keyOf = (combo) => {
-  const attrs = Object.entries(combo)
-    .filter(([k]) => !ATTR_EXCLUDE.has(k))
-    .map(([k, v]) => [String(k), String(v)]);
-  // ordena para tener una llave determinística
-  attrs.sort(([a], [b]) => a.localeCompare(b));
-  return JSON.stringify(attrs);
-};
-
-const genId = () =>
-  `VAR_${Date.now().toString(36)}_${Math.random()
-    .toString(36)
-    .slice(2, 7)
-    .toUpperCase()}`;
-
-// Genera un SKU legible a partir de nombre/categoría y atributos
-const buildSku = (categoriaNombre, nombreProd, combo) => {
-  const obj = Object.fromEntries(
-    Object.entries(combo).filter(([k]) => !ATTR_EXCLUDE.has(k))
-  );
-
-  const colorKey = Object.keys(obj).find((k) => k.toLowerCase() === "color");
-  const tallaKey = Object.keys(obj).find((k) => k.toLowerCase() === "talla");
-
-  const cat = (categoriaNombre || "").toString().slice(0, 4).toUpperCase();
-  const name = (nombreProd || "").trim().toUpperCase().replace(/\s+/g, "_");
-  const color = colorKey ? String(obj[colorKey]).toUpperCase() : "";
-  const talla = tallaKey ? `T${String(obj[tallaKey]).toUpperCase()}` : "";
-
-  return [cat, name, color, talla]
-    .filter(Boolean)
-    .join("_")
-    .replace(/_+/g, "_");
-};
-
-// Función para generar producto cartesiano de combinaciones
-const generarCombinaciones = (variantes, precioBase) => {
-  let combos = [{}];
-  variantes.forEach(({ atributo, opciones }) => {
-    if (!atributo.trim()) return;
-    const tmp = [];
-    combos.forEach((base) => {
-      opciones
-        .filter((o) => o.trim())
-        .forEach((op) => {
-          tmp.push({
-            ...base,
-            [atributo.trim()]: op.trim(),
-            precio: precioBase,
-          });
-        });
-    });
-    combos = tmp;
-  });
-  return combos;
-};
-
-/**
- * Componente RegistroProducto
- * - IDs de variante ESTABLES
- * - SKU legible
- * - barcode por variante
- * - categoriaId + categoria (nombre)
- */
-const RegistroProducto = ({ producto, setShow }) => {
-  // Básicos
+const RegistroProducto = ({ producto, setShow, refetch }) => {
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [categorias, setCategorias] = useState([]);
-  const [categoriaId, setCategoriaId] = useState(""); // id
-  const [categoria, setCategoria] = useState(""); // nombre
+  const [categoriaId, setCategoriaId] = useState("");
   const [precioBase, setPrecioBase] = useState("");
-  const [imagenes, setImagenes] = useState([""]);
+  const [marca, setMarca] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [tallasSeleccionadas, setTallasSeleccionadas] = useState([]);
+  const [coloresSeleccionados, setColoresSeleccionados] = useState([]);
+  const [variantes, setVariantes] = useState([]);
+  const [costoVariante, setCostoVariante] = useState("");
 
-  // Variantes (definición) y combinaciones (instancias)
-  const [tieneVariantes, setTieneVariantes] = useState(false);
-  const [variantes, setVariantes] = useState([
-    { atributo: "", opciones: [""] },
-  ]);
-  const [combinaciones, setCombinaciones] = useState([]);
-
-  // Carga inicial (trae categorías y, si hace falta, el producto completo con variantes)
   useEffect(() => {
-    let alive = true;
-
-    (async () => {
-      // 1) Categorías
+    let mounted = true;
+    const cargarDatos = async () => {
       try {
-        const cats = await obtenerCategorias();
-        if (!alive) return;
-        setCategorias(cats || []);
-      } catch {
-        toast.error("Error al cargar categorías");
-      }
-
-      // 2) Producto (si viene)
-      if (!producto) return;
-
-      // Si el producto que llega no trae variantes, lo pedimos completo por ID
-      let p = producto;
-      if (producto.id && !Array.isArray(producto.variantes)) {
-        try {
-          const full = await obtenerProducto(producto.id);
-          if (!alive) return;
-          p = full;
-        } catch (e) {
-          console.error(e);
-          toast.error("No se pudo cargar el producto completo");
+        const categoriasData = await CategoriaService.obtenerCategorias();
+        if (mounted) {
+          setCategorias(Array.isArray(categoriasData) ? categoriasData : []);
         }
-      }
+        if (producto) {
+          setNombre(producto.nombre || "");
+          setDescripcion(producto.descripcion || "");
+          setCategoriaId(producto.categoria_id || "");
+          setPrecioBase(
+            producto.precio_base != null ? String(producto.precio_base) : ""
+          );
+          setMarca(producto.marca || "");
 
-      // Poblar campos base
-      setNombre(p?.nombre || "");
-      setDescripcion(p?.descripcion || "");
-      setCategoriaId(p?.categoriaId || "");
-      setCategoria(p?.categoria || "");
-      setPrecioBase(p?.precioBase != null ? String(p.precioBase) : "");
-      setImagenes(p?.imagenes?.length ? p.imagenes : [""]);
+          // Cargar variantes existentes si está en modo edición
+          if (
+            producto.variantes_producto &&
+            producto.variantes_producto.length > 0
+          ) {
+            const tallasExistentes = new Set();
+            const coloresExistentes = new Set();
 
-      // Variantes
-      const hasVars = Array.isArray(p?.variantes) && p.variantes.length > 0;
-      setTieneVariantes(hasVars);
+            const variantesCargadas = producto.variantes_producto.map(
+              (v, index) => ({
+                id: v.id || "loaded-" + index,
+                sku: v.sku,
+                atributos: v.atributos || {},
+                precio: String(v.precio || producto.precio_base || ""),
+                costo: v.costo ? String(v.costo) : "",
+                activo: v.activo !== false,
+              })
+            );
 
-      if (hasVars) {
-        // Reconstruir el "schema" de atributos a partir de todas las variantes
-        const schema = {};
-        for (const v of p.variantes) {
-          Object.entries(v.atributos || {}).forEach(([k, val]) => {
-            const key = String(k).trim();
-            if (!schema[key]) schema[key] = new Set();
-            schema[key].add(String(val).trim());
-          });
+            // Extraer tallas y colores únicos de las variantes
+            producto.variantes_producto.forEach((v) => {
+              if (v.atributos?.talla) {
+                tallasExistentes.add(v.atributos.talla);
+              }
+              if (v.atributos?.color) {
+                coloresExistentes.add(v.atributos.color);
+              }
+            });
+
+            setVariantes(variantesCargadas);
+            setTallasSeleccionadas(Array.from(tallasExistentes));
+            setColoresSeleccionados(Array.from(coloresExistentes));
+          }
         }
-        setVariantes(
-          Object.entries(schema).map(([atributo, set]) => ({
-            atributo,
-            opciones: Array.from(set),
-          }))
-        );
-
-        // Combos preservando id, precio, sku, barcode
-        const initCombos = p.variantes.map((v) => ({
-          id: v.id,
-          ...v.atributos, // Color/Talla/etc.
-          precio: v.precio ?? p.precioBase,
-          sku: v.sku || "",
-          barcode: v.barcode || "",
-        }));
-        setCombinaciones(initCombos);
-      } else {
-        // Si no hay variantes, resetea a estado mínimo
-        setVariantes([{ atributo: "", opciones: [""] }]);
-        setCombinaciones([]);
+      } catch (error) {
+        console.error("Error cargando datos:", error);
+        toast.error("Error al cargar datos iniciales");
       }
-    })();
-
+    };
+    cargarDatos();
     return () => {
-      alive = false;
+      mounted = false;
     };
   }, [producto]);
 
-  // ---------- Handlers imágenes ----------
-  const handleImagenChange = (i, val) => {
-    const arr = [...imagenes];
-    arr[i] = val;
-    setImagenes(arr);
-  };
-  const addImagen = () => setImagenes([...imagenes, ""]);
-  const removeImagen = (i) => {
-    const arr = imagenes.filter((_, idx) => idx !== i);
-    setImagenes(arr.length ? arr : [""]);
+  const generarVariantes = () => {
+    if (tallasSeleccionadas.length === 0 && coloresSeleccionados.length === 0) {
+      toast.warning("Selecciona al menos una talla o un color");
+      return;
+    }
+    if (!precioBase || parseFloat(precioBase) <= 0) {
+      toast.error("Ingresa un precio base válido primero");
+      return;
+    }
+    const nuevasVariantes = [];
+    const prefijo = nombre ? nombre.substring(0, 3).toUpperCase() : "PRO";
+
+    if (tallasSeleccionadas.length > 0 && coloresSeleccionados.length === 0) {
+      tallasSeleccionadas.forEach((talla, index) => {
+        nuevasVariantes.push({
+          id: "temp-" + Date.now() + "-" + index,
+          sku:
+            prefijo +
+            "-" +
+            String(index + 1).padStart(3, "0") +
+            "-" +
+            talla.toUpperCase(),
+          atributos: { talla: talla },
+          precio: precioBase,
+          costo: costoVariante || "",
+          activo: true,
+        });
+      });
+    } else if (
+      coloresSeleccionados.length > 0 &&
+      tallasSeleccionadas.length === 0
+    ) {
+      coloresSeleccionados.forEach((color, index) => {
+        nuevasVariantes.push({
+          id: "temp-" + Date.now() + "-" + index,
+          sku:
+            prefijo +
+            "-" +
+            String(index + 1).padStart(3, "0") +
+            "-" +
+            color.substring(0, 2).toUpperCase(),
+          atributos: { color: color },
+          precio: precioBase,
+          costo: costoVariante || "",
+          activo: true,
+        });
+      });
+    } else {
+      let contador = 1;
+      tallasSeleccionadas.forEach((talla) => {
+        coloresSeleccionados.forEach((color) => {
+          nuevasVariantes.push({
+            id: "temp-" + Date.now() + "-" + contador,
+            sku:
+              prefijo +
+              "-" +
+              String(contador).padStart(3, "0") +
+              "-" +
+              talla.toUpperCase() +
+              "-" +
+              color.substring(0, 2).toUpperCase(),
+            atributos: { talla: talla, color: color },
+            precio: precioBase,
+            costo: costoVariante || "",
+            activo: true,
+          });
+          contador++;
+        });
+      });
+    }
+    setVariantes(nuevasVariantes);
+    toast.success(
+      "✨ " + nuevasVariantes.length + " variantes generadas automáticamente"
+    );
   };
 
-  // ---------- Handlers variantes (definición) ----------
-  const handleAtributoChange = (i, val) => {
-    const arr = [...variantes];
-    arr[i].atributo = val;
-    setVariantes(arr);
-  };
-  const handleOpcionChange = (i, j, val) => {
-    const arr = [...variantes];
-    arr[i].opciones[j] = val;
-    setVariantes(arr);
-  };
-  const addOpcion = (i) => {
-    const arr = [...variantes];
-    arr[i].opciones.push("");
-    setVariantes(arr);
-  };
-  const removeOpcion = (i, j) => {
-    const arr = [...variantes];
-    arr[i].opciones = arr[i].opciones.filter((_, idx) => idx !== j);
-    if (!arr[i].opciones.length) arr[i].opciones = [""];
-    setVariantes(arr);
-  };
-  const addVariante = () =>
-    setVariantes([...variantes, { atributo: "", opciones: [""] }]);
-  const removeVariante = (i) => {
-    const arr = variantes.filter((_, idx) => idx !== i);
-    setVariantes(arr.length ? arr : [{ atributo: "", opciones: [""] }]);
-  };
-
-  // ---------- Generar combos preservando IDs/valores previos ----------
-  const handleGenerarCombos = () => {
-    const base = parseFloat(precioBase) || 0;
-    const raw = generarCombinaciones(variantes, base);
-
-    // Indexa combos previos por su "key" (sin precio/id/sku/barcode)
-    const prevByKey = new Map(combinaciones.map((c) => [keyOf(c), c]));
-
-    const withId = raw.map((c) => {
-      const k = keyOf(c);
-      const prev = prevByKey.get(k);
-      const next = {
-        id: prev?.id || genId(), // ID estable
-        ...c, // atributos + precio base por generarCombinaciones
-        precio: prev?.precio ?? c.precio ?? base, // preserva precio si existía
-        sku: buildSku(categoria, nombre, prev || c), // SKU legible
-        barcode: prev?.barcode || "", // preserva barcode si existía
-      };
-      return next;
+  const toggleTalla = (talla) => {
+    setTallasSeleccionadas((prev) => {
+      const existe = prev.includes(talla);
+      return existe ? prev.filter((t) => t !== talla) : [...prev, talla];
     });
-
-    setCombinaciones(withId);
   };
 
-  const handlePrecioComboChange = (idx, val) => {
-    const arr = [...combinaciones];
-    arr[idx].precio = parseFloat(val) || 0;
-    setCombinaciones(arr);
-  };
-
-  const handleComboChange = (idx, patch) => {
-    setCombinaciones((prev) => {
-      const arr = [...prev];
-      arr[idx] = { ...arr[idx], ...patch };
-      return arr;
+  const toggleColor = (color) => {
+    setColoresSeleccionados((prev) => {
+      const existe = prev.includes(color);
+      return existe ? prev.filter((c) => c !== color) : [...prev, color];
     });
   };
 
-  // ---------- Submit ----------
+  const actualizarVariante = (index, campo, valor) => {
+    const nuevasVariantes = [...variantes];
+    nuevasVariantes[index][campo] = valor;
+    setVariantes(nuevasVariantes);
+  };
+
+  const eliminarTodasVariantes = () => {
+    if (window.confirm("¿Estás seguro de eliminar todas las variantes?")) {
+      setVariantes([]);
+      setTallasSeleccionadas([]);
+      setColoresSeleccionados([]);
+      toast.info("Variantes eliminadas");
+    }
+  };
+
+  const eliminarVariante = (index) => {
+    const nuevasVariantes = variantes.filter((_, i) => i !== index);
+    setVariantes(nuevasVariantes);
+    toast.info("Variante eliminada");
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!nombre.trim() || !precioBase.trim() || !categoriaId) {
-      toast.error("Completa Nombre, Precio y Categoría");
+      toast.error("Completa Nombre, Precio Base y Categoría");
       return;
     }
-
-    // Validación simple: combos duplicados por atributos
-    const keys = new Set();
-    for (const c of combinaciones) {
-      const k = keyOf(c);
-      if (keys.has(k)) {
-        toast.error("Hay combinaciones duplicadas de variantes.");
+    if (variantes.length > 0) {
+      const variantesInvalidas = variantes.some(
+        (v) => !v.sku.trim() || !v.precio
+      );
+      if (variantesInvalidas) {
+        toast.error("Todas las variantes deben tener SKU y precio");
         return;
       }
-      keys.add(k);
     }
 
-    const payload = {
+    const productoPayload = {
       nombre: nombre.trim(),
       descripcion: descripcion.trim(),
-      categoria, // nombre (para mostrar/búsquedas)
-      categoriaId: categoriaId || null, // id (para relaciones)
-      precioBase: parseFloat(precioBase),
-      imagenes: imagenes.filter((u) => u.trim()),
-      tieneVariantes,
-      variantes: tieneVariantes
-        ? combinaciones.map((c) => ({
-            id: c.id, // estable
-            sku: c.sku || null,
-            barcode: c.barcode || null,
-            precio: c.precio,
-            atributos: Object.fromEntries(
-              Object.entries(c).filter(([k]) => !ATTR_EXCLUDE.has(k))
-            ),
-          }))
-        : [],
+      categoria_id: categoriaId,
+      precio_base: parseFloat(precioBase),
+      marca: marca.trim(),
+      activo: true,
     };
 
+    setLoading(true);
     try {
       if (producto?.id) {
-        await actualizarProducto(producto.id, payload);
-        toast.success("Producto actualizado");
+        // Modo edición: actualizar producto
+        await ProductoService.actualizarProducto(producto.id, productoPayload);
+        toast.success("✅ Producto actualizado exitosamente");
       } else {
-        await crearProducto(payload);
-        toast.success("Producto creado");
+        // Modo creación: crear producto con variantes
+        const variantesFormateadas = variantes.map((v) => ({
+          sku: v.sku.trim(),
+          atributos: v.atributos,
+          precio: parseFloat(v.precio),
+          costo: v.costo ? parseFloat(v.costo) : null,
+          activo: v.activo,
+        }));
+
+        await ProductoService.crearProducto({
+          producto: productoPayload,
+          variantes: variantesFormateadas,
+        });
+        toast.success("✅ Producto creado exitosamente");
       }
+
+      if (refetch) await refetch();
       setShow(false);
     } catch (err) {
-      console.error(err);
-      toast.error("Error guardando producto");
+      console.error("Error guardando producto:", err);
+      toast.error(err.message || "Error al guardar el producto");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="container ">
+    <div className="registro-producto">
       <form onSubmit={handleSubmit}>
-        {/* Nombre */}
-        <div className="mb-3">
-          <label className="form-label">Nombre *</label>
+        <div className="form-group">
+          <label>
+            <span className="icon">
+              <FontAwesomeIcon icon={faBox} />
+            </span>
+            Nombre <span className="required">*</span>
+          </label>
           <input
             type="text"
             className="form-control"
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
+            placeholder="Ingresa el nombre del producto"
             required
           />
         </div>
 
-        {/* Descripción */}
-        <div className="mb-3">
-          <label className="form-label">Descripción</label>
+        <div className="form-group">
+          <label>
+            <span className="icon">
+              <FontAwesomeIcon icon={faFileAlt} />
+            </span>
+            Descripción
+          </label>
           <textarea
             className="form-control"
             value={descripcion}
             onChange={(e) => setDescripcion(e.target.value)}
+            placeholder="Descripción detallada del producto"
             rows={3}
           />
         </div>
 
-        {/* Categoría (id + nombre) */}
-        <div className="mb-3">
-          <label className="form-label">Categoría *</label>
+        <div className="form-group">
+          <label>
+            <span className="icon">
+              <FontAwesomeIcon icon={faLayerGroup} />
+            </span>
+            Categoría <span className="required">*</span>
+          </label>
           <select
             className="form-select"
             value={categoriaId}
-            onChange={(e) => {
-              const id = e.target.value;
-              setCategoriaId(id);
-              const cat = categorias.find((c) => c.id === id);
-              setCategoria(cat?.nombre || "");
-            }}
+            onChange={(e) => setCategoriaId(e.target.value)}
             required
           >
-            <option value="">— Selecciona —</option>
+            <option value="">— Selecciona una categoría —</option>
             {categorias.map((cat) => (
               <option key={cat.id} value={cat.id}>
                 {cat.nombre}
@@ -354,207 +336,252 @@ const RegistroProducto = ({ producto, setShow }) => {
           </select>
         </div>
 
-        {/* Precio Base */}
-        <div className="mb-3">
-          <label className="form-label">Precio Base *</label>
+        <div className="form-group">
+          <label>
+            <span className="icon">
+              <FontAwesomeIcon icon={faDollarSign} />
+            </span>
+            Precio Base <span className="required">*</span>
+          </label>
           <input
             type="number"
             className="form-control"
             value={precioBase}
             onChange={(e) => setPrecioBase(e.target.value)}
+            placeholder="0.00"
             step="0.01"
             min="0"
             required
           />
         </div>
 
-        {/* Imágenes */}
-        <div className="mb-3">
-          <label className="form-label">Imágenes</label>
-          {imagenes.map((url, idx) => (
-            <div key={idx} className="input-group mb-2">
-              <input
-                type="text"
-                className="form-control"
-                placeholder="URL imagen"
-                value={url}
-                onChange={(e) => handleImagenChange(idx, e.target.value)}
-              />
-              <button
-                className="btn btn-outline-danger"
-                type="button"
-                onClick={() => removeImagen(idx)}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          <button
-            className="btn btn-sm btn-outline-secondary"
-            type="button"
-            onClick={addImagen}
-          >
-            + Imagen
-          </button>
-        </div>
-
-        {/* Variantes */}
-        <div className="form-check mb-3">
-          <input
-            id="hasVariants"
-            type="checkbox"
-            className="form-check-input"
-            checked={tieneVariantes}
-            onChange={(e) => setTieneVariantes(e.target.checked)}
-          />
-          <label htmlFor="hasVariants" className="form-check-label">
-            ¿Tiene variantes?
+        <div className="form-group">
+          <label>
+            <span className="icon">
+              <FontAwesomeIcon icon={faCog} />
+            </span>
+            Marca
           </label>
+          <input
+            type="text"
+            className="form-control"
+            value={marca}
+            onChange={(e) => setMarca(e.target.value)}
+            placeholder="Marca del producto (opcional)"
+          />
         </div>
 
-        {tieneVariantes && (
-          <div className="mb-3 border p-3 rounded">
-            <h5 className="mb-3">Variantes</h5>
-            {variantes.map((v, i) => (
-              <div key={i} className="mb-3">
-                <div className="d-flex justify-content-between mb-2">
-                  <strong>Variante {i + 1}</strong>
+        <div className="variantes-section">
+          <div className="variantes-header">
+            <h4>
+              <FontAwesomeIcon icon={faTags} /> Variantes del Producto
+            </h4>
+            {variantes.length > 0 && (
+              <button
+                type="button"
+                className="btn-limpiar-variantes"
+                onClick={eliminarTodasVariantes}
+              >
+                <FontAwesomeIcon icon={faTrash} /> Eliminar Todas
+              </button>
+            )}
+          </div>
+
+          {producto?.id && variantes.length > 0 && (
+            <div className="info-edicion">
+              <p>
+                📝 <strong>Modo Edición:</strong> Las variantes actuales se
+                muestran a continuación. Puedes modificar los precios/costos,
+                eliminar variantes o agregar nuevas seleccionando tallas/colores
+                adicionales.
+              </p>
+            </div>
+          )}
+
+          <div className="generador-variantes">
+            <p className="info-text">
+              Selecciona las tallas y colores para generar automáticamente todas
+              las combinaciones de variantes.
+            </p>
+
+            <div className="atributos-selector">
+              <label className="selector-label">
+                <FontAwesomeIcon icon={faTags} /> Tallas Disponibles
+              </label>
+              <div className="atributos-grid">
+                {TALLAS_DISPONIBLES.map((talla) => (
                   <button
-                    className="btn btn-sm btn-outline-danger"
+                    key={talla}
                     type="button"
-                    onClick={() => removeVariante(i)}
+                    className={
+                      "atributo-btn " +
+                      (tallasSeleccionadas.includes(talla) ? "selected" : "")
+                    }
+                    onClick={() => toggleTalla(talla)}
                   >
-                    Eliminar
+                    {tallasSeleccionadas.includes(talla) && (
+                      <FontAwesomeIcon icon={faCheck} className="check-icon" />
+                    )}
+                    {talla}
                   </button>
-                </div>
-                <input
-                  type="text"
-                  className="form-control mb-2"
-                  placeholder="Atributo (ej. Color)"
-                  value={v.atributo}
-                  onChange={(e) => handleAtributoChange(i, e.target.value)}
-                />
-                {v.opciones.map((op, j) => (
-                  <div key={j} className="input-group mb-2">
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="Opción (ej. Rojo)"
-                      value={op}
-                      onChange={(e) => handleOpcionChange(i, j, e.target.value)}
-                    />
-                    <button
-                      className="btn btn-outline-danger"
-                      type="button"
-                      onClick={() => removeOpcion(i, j)}
-                    >
-                      ×
-                    </button>
-                  </div>
                 ))}
-                <button
-                  className="btn btn-sm btn-outline-secondary me-2"
-                  type="button"
-                  onClick={() => addOpcion(i)}
-                >
-                  + Opción
-                </button>
               </div>
-            ))}
+            </div>
+
+            <div className="atributos-selector">
+              <label className="selector-label">
+                <FontAwesomeIcon icon={faTags} /> Colores Disponibles
+              </label>
+              <div className="atributos-grid">
+                {COLORES_DISPONIBLES.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={
+                      "atributo-btn " +
+                      (coloresSeleccionados.includes(color) ? "selected" : "")
+                    }
+                    onClick={() => toggleColor(color)}
+                  >
+                    {coloresSeleccionados.includes(color) && (
+                      <FontAwesomeIcon icon={faCheck} className="check-icon" />
+                    )}
+                    {color}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>
+                <FontAwesomeIcon icon={faDollarSign} /> Costo (opcional)
+              </label>
+              <input
+                type="number"
+                className="form-control"
+                value={costoVariante}
+                onChange={(e) => setCostoVariante(e.target.value)}
+                placeholder="Costo de adquisición"
+                step="0.01"
+                min="0"
+              />
+              <small className="form-text">
+                Este costo se aplicará a todas las variantes generadas
+              </small>
+            </div>
+
             <button
-              className="btn btn-sm btn-outline-primary me-2"
               type="button"
-              onClick={addVariante}
-            >
-              + Agregar Variante
-            </button>
-            <button
-              className="btn btn-secondary"
-              type="button"
-              onClick={handleGenerarCombos}
+              className="btn-generar-variantes"
+              onClick={generarVariantes}
               disabled={
                 !precioBase ||
-                !variantes.some(
-                  (v) => v.atributo.trim() && v.opciones.some((o) => o.trim())
-                )
+                (tallasSeleccionadas.length === 0 &&
+                  coloresSeleccionados.length === 0)
               }
             >
-              Generar Combinaciones
+              <FontAwesomeIcon icon={faMagic} />{" "}
+              {variantes.length > 0
+                ? "Agregar Más Variantes"
+                : "Generar Variantes Automáticamente"}
             </button>
-          </div>
-        )}
 
-        {/* Tabla de combinaciones con edición de precio y barcode */}
-        {tieneVariantes && combinaciones.length > 0 && (
-          <div className="table-responsive mb-3">
-            <table className="table table-bordered align-middle">
-              <thead>
-                <tr>
-                  {/* Atributos dinámicos */}
-                  {Object.keys(
-                    Object.fromEntries(
-                      Object.entries(combinaciones[0]).filter(
-                        ([k]) => !ATTR_EXCLUDE.has(k)
-                      )
-                    )
-                  ).map((k) => (
-                    <th key={k}>{k}</th>
-                  ))}
-                  <th>SKU</th>
-                  <th>Precio</th>
-                  <th>Barcode</th>
-                </tr>
-              </thead>
-              <tbody>
-                {combinaciones.map((c, idx) => (
-                  <tr key={c.id}>
-                    {Object.entries(c)
-                      .filter(([k]) => !ATTR_EXCLUDE.has(k))
-                      .map(([k, v]) => (
-                        <td key={k}>{String(v)}</td>
-                      ))}
-                    <td>
-                      <input
-                        type="text"
-                        className="form-control"
-                        value={c.sku || ""}
-                        onChange={(e) =>
-                          handleComboChange(idx, { sku: e.target.value })
-                        }
-                      />
-                    </td>
-                    <td style={{ width: 140 }}>
+            {tallasSeleccionadas.length > 0 &&
+              coloresSeleccionados.length > 0 && (
+                <p className="variantes-count">
+                  Se generarán{" "}
+                  <strong>
+                    {tallasSeleccionadas.length * coloresSeleccionados.length}
+                  </strong>{" "}
+                  variantes
+                </p>
+              )}
+            {tallasSeleccionadas.length > 0 &&
+              coloresSeleccionados.length === 0 && (
+                <p className="variantes-count">
+                  Se generarán <strong>{tallasSeleccionadas.length}</strong>{" "}
+                  variantes
+                </p>
+              )}
+            {coloresSeleccionados.length > 0 &&
+              tallasSeleccionadas.length === 0 && (
+                <p className="variantes-count">
+                  Se generarán <strong>{coloresSeleccionados.length}</strong>{" "}
+                  variantes
+                </p>
+              )}
+          </div>
+
+          {variantes.length > 0 && (
+            <div className="variantes-generadas">
+              <p className="success-text">
+                ✨ {variantes.length} variantes en total. Puedes editar
+                precios/SKUs individualmente o eliminar variantes específicas.
+              </p>
+              <div className="variantes-list">
+                {variantes.map((variante, index) => (
+                  <div key={variante.id} className="variante-item-compacta">
+                    <div className="variante-info">
+                      <span className="variante-numero">#{index + 1}</span>
+                      <span className="variante-sku">
+                        <FontAwesomeIcon icon={faBarcode} /> {variante.sku}
+                      </span>
+                      <span className="variante-atributos">
+                        {variante.atributos.talla && (
+                          <span className="badge">
+                            Talla: {variante.atributos.talla}
+                          </span>
+                        )}
+                        {variante.atributos.color && (
+                          <span className="badge">
+                            Color: {variante.atributos.color}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="variante-precios">
                       <input
                         type="number"
-                        className="form-control"
-                        value={c.precio}
+                        className="input-precio"
+                        value={variante.precio}
+                        onChange={(e) =>
+                          actualizarVariante(index, "precio", e.target.value)
+                        }
+                        placeholder="Precio"
                         step="0.01"
                         min="0"
-                        onChange={(e) =>
-                          handlePrecioComboChange(idx, e.target.value)
-                        }
                       />
-                    </td>
-                    <td style={{ width: 220 }}>
                       <input
-                        type="text"
-                        className="form-control"
-                        placeholder="Ej. CODE128"
-                        value={c.barcode || ""}
+                        type="number"
+                        className="input-costo"
+                        value={variante.costo}
                         onChange={(e) =>
-                          handleComboChange(idx, { barcode: e.target.value })
+                          actualizarVariante(index, "costo", e.target.value)
                         }
+                        placeholder="Costo"
+                        step="0.01"
+                        min="0"
                       />
-                    </td>
-                  </tr>
+                      <button
+                        type="button"
+                        className="btn-eliminar-variante"
+                        onClick={() => eliminarVariante(index)}
+                        title="Eliminar variante"
+                      >
+                        <FontAwesomeIcon icon={faTrash} />
+                      </button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+              </div>
+            </div>
+          )}
+        </div>
 
-        {/* Botón guardar */}
-        <button type="submit" className="btn btn-primary w-100">
+        <button type="submit" className="btn-submit" disabled={loading}>
+          {loading && (
+            <FontAwesomeIcon icon={faSpinner} spin className="spinner" />
+          )}
           {producto?.id ? "Actualizar Producto" : "Guardar Producto"}
         </button>
       </form>

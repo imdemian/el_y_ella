@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { obtenerProductosPaginado } from "../../services/productoService";
+import { ProductoService } from "../../services/supabase/productoService";
 import BasicModal from "../../components/BasicModal/BasicModal";
 import RegistroProducto from "./RegistrarProductos";
 import DataTable from "react-data-table-component";
@@ -8,16 +8,18 @@ import {
   faPen,
   faSpinner,
   faTrashCan,
+  faPlus,
+  faSearch,
 } from "@fortawesome/free-solid-svg-icons";
-import EditarProducto from "./EditarProducto";
 import EliminarProducto from "./Eliminar.Producto";
-
-const PAGE_SIZE = 100;
+import { toast } from "react-toastify";
+import "./Productos.scss";
 
 export default function ProductosScreen() {
   const [loading, setLoading] = useState(false);
   const [productos, setProductos] = useState([]);
-  const [cursor, setCursor] = useState(null);
+  const [error, setError] = useState(null);
+  const [filterText, setFilterText] = useState("");
 
   // Modal
   const [showModal, setShowModal] = useState(false);
@@ -25,93 +27,42 @@ export default function ProductosScreen() {
   const [contentModal, setContentModal] = useState(null);
   const [size, setSize] = useState("lg");
 
-  // Dedupe por id
-  const mergeUniqueById = useCallback((prev, next) => {
-    const map = new Map(prev.map((p) => [p.id, p]));
-    next.forEach((p) => map.set(p.id, p));
-    return Array.from(map.values());
-  }, []);
-
-  // Normaliza respuesta del backend
-  const parseRespuesta = (resp) => {
-    const productos = Array.isArray(resp)
-      ? resp
-      : Array.isArray(resp.productos)
-      ? resp.productos
-      : Array.isArray(resp.data)
-      ? resp.data
-      : [];
-    const nextStartAfter =
-      (resp && (resp.nextStartAfter || resp.cursor)) ||
-      (productos.length ? productos[productos.length - 1].id : null);
-    return { productos, nextStartAfter };
-  };
-
-  // Cargar primera página (reset)
-  const cargarPrimeraPagina = useCallback(async () => {
-    if (loading) return;
+  // Cargar productos
+  const cargarProductos = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const resp = await obtenerProductosPaginado(PAGE_SIZE, null);
-      const { productos: lista, nextStartAfter } = parseRespuesta(resp);
-      setProductos(lista);
-      setCursor(nextStartAfter || null);
+      const response = await ProductoService.listarProductos({
+        page: 1,
+        limit: 100,
+        activo: "all",
+      });
+
+      // La respuesta tiene estructura { data: [...], pagination: {...} }
+      const productosData = response.data || [];
+      setProductos(productosData);
     } catch (error) {
-      console.error("Error al cargar productos (primera página):", error);
+      console.error("Error al cargar productos:", error);
+      setError(error.message);
+      toast.error(error.message || "Error al cargar productos");
       setProductos([]);
-      setCursor(null);
     } finally {
       setLoading(false);
     }
-  }, [loading]); // sin deps
-
-  // Cargar más
-  const cargarMas = useCallback(async () => {
-    if (loading || !cursor) return;
-    setLoading(true);
-    try {
-      const resp = await obtenerProductosPaginado(PAGE_SIZE, cursor);
-      const { productos: lista, nextStartAfter } = parseRespuesta(resp);
-      setProductos((prev) => mergeUniqueById(prev, lista));
-      setCursor(nextStartAfter || null);
-    } catch (error) {
-      console.error("Error al cargar más productos:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [cursor, loading, mergeUniqueById]);
+  };
 
   // Carga inicial
   useEffect(() => {
-    cargarPrimeraPagina();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    cargarProductos();
   }, []);
-
-  // Al cerrar modal por cualquier vía (X, backdrop o desde hijos) refrescamos
-  const handleModalVisibility = useCallback(
-    (visible) => {
-      setShowModal(visible);
-      if (!visible) {
-        // Solo cuando se cierra
-        cargarPrimeraPagina();
-      }
-    },
-    [cargarPrimeraPagina]
-  );
-
-  // Si los hijos guardan/eliminan, solo cerramos; el refresh ocurrirá en handleModalVisibility(false)
-  const closeModal = useCallback(
-    () => handleModalVisibility(false),
-    [handleModalVisibility]
-  );
 
   // Abrir modal registrar
   const registrarProducto = () => {
     setContentModal(
       <RegistroProducto
         producto={null}
-        setShow={handleModalVisibility}
-        onSaved={closeModal} // cierra; el refresh lo hace handleModalVisibility(false)
+        setShow={setShowModal}
+        refetch={cargarProductos}
       />
     );
     setModalTitle("Registrar Producto");
@@ -120,124 +71,214 @@ export default function ProductosScreen() {
   };
 
   // Editar
-  const handleEdit = useCallback(
-    (row) => {
-      setContentModal(
-        <RegistroProducto
-          producto={row}
-          setShow={handleModalVisibility}
-          onSaved={closeModal}
-        />
-      );
-      setModalTitle("Editar Producto");
-      setSize("lg");
-      setShowModal(true);
-    },
-    [handleModalVisibility, closeModal]
-  );
+  const handleEdit = useCallback((row) => {
+    setContentModal(
+      <RegistroProducto
+        producto={row}
+        setShow={setShowModal}
+        refetch={cargarProductos}
+      />
+    );
+    setModalTitle("Editar Producto");
+    setSize("lg");
+    setShowModal(true);
+  }, []);
 
   // Eliminar
-  const handleDelete = useCallback(
-    (row) => {
-      setContentModal(
-        <EliminarProducto
-          producto={row}
-          setShow={handleModalVisibility}
-          onDeleted={closeModal}
-        />
-      );
-      setModalTitle("Eliminar Producto");
-      setSize("md");
-      setShowModal(true);
-    },
-    [handleModalVisibility, closeModal]
-  );
+  const handleDelete = useCallback((row) => {
+    setContentModal(
+      <EliminarProducto
+        producto={row}
+        setShow={setShowModal}
+        refetch={cargarProductos}
+      />
+    );
+    setModalTitle("Desactivar Producto");
+    setSize("md");
+    setShowModal(true);
+  }, []);
+
+  // Filtrar productos
+  const productosFiltrados = useMemo(() => {
+    if (!filterText) return productos;
+    return productos.filter(
+      (producto) =>
+        producto.nombre?.toLowerCase().includes(filterText.toLowerCase()) ||
+        producto.descripcion
+          ?.toLowerCase()
+          .includes(filterText.toLowerCase()) ||
+        producto.categorias?.nombre
+          ?.toLowerCase()
+          .includes(filterText.toLowerCase())
+    );
+  }, [productos, filterText]);
 
   const columns = useMemo(
     () => [
-      { name: "Nombre", selector: (row) => row.nombre, sortable: true },
+      {
+        name: "Nombre",
+        selector: (row) => row.nombre || "Sin nombre",
+        sortable: true,
+        grow: 2,
+      },
       {
         name: "Descripción",
-        selector: (row) => row.descripcion,
+        selector: (row) => row.descripcion || "Sin descripción",
         sortable: true,
+        grow: 2,
       },
-      { name: "Categoría", selector: (row) => row.categoria, sortable: true },
+      {
+        name: "Categoría",
+        selector: (row) => row.categorias?.nombre || "Sin categoría",
+        sortable: true,
+        grow: 1,
+      },
       {
         name: "Precio Base",
-        selector: (row) => row.precioBase,
+        selector: (row) => `$${parseFloat(row.precio_base || 0).toFixed(2)}`,
         sortable: true,
+        right: true,
+        grow: 1,
+      },
+      {
+        name: "Estado",
+        cell: (row) => (
+          <span
+            className={`badge-estado ${row.activo ? "activo" : "inactivo"}`}
+          >
+            {row.activo ? "Activo" : "Inactivo"}
+          </span>
+        ),
+        center: true,
+        grow: 1,
       },
       {
         name: "Acciones",
         cell: (row) => (
-          <div className="d-flex justify-content-between">
+          <div className="d-flex">
             <button
-              className="btn btn-primary btn-sm me-1"
+              className="btn-action btn-edit"
               onClick={() => handleEdit(row)}
               title="Editar"
             >
               <FontAwesomeIcon icon={faPen} />
             </button>
             <button
-              className="btn btn-danger btn-sm"
+              className="btn-action btn-delete"
               onClick={() => handleDelete(row)}
-              title="Eliminar"
+              title="Desactivar"
             >
               <FontAwesomeIcon icon={faTrashCan} />
             </button>
           </div>
         ),
         ignoreRowClick: true,
+        center: true,
+        grow: 1,
       },
     ],
     [handleDelete, handleEdit]
   );
 
+  const customStyles = {
+    headRow: {
+      style: {
+        background: "linear-gradient(135deg, #9b7fa8 0%, #8f749f 100%)",
+        color: "white",
+        fontWeight: "600",
+        fontSize: "1rem",
+        minHeight: "56px",
+      },
+    },
+    headCells: {
+      style: {
+        color: "white",
+        fontSize: "1rem",
+        fontWeight: "600",
+      },
+    },
+    rows: {
+      style: {
+        minHeight: "60px",
+        fontSize: "0.95rem",
+        "&:hover": {
+          backgroundColor: "#f9fafb",
+          cursor: "pointer",
+        },
+      },
+    },
+    cells: {
+      style: {
+        paddingLeft: "16px",
+        paddingRight: "16px",
+      },
+    },
+  };
+
   return (
-    <div className="container mt-4">
-      <div className="mb-3 d-flex justify-content-between align-items-center">
-        <h2>Productos</h2>
-        <button className="btn btn-primary" onClick={registrarProducto}>
-          Registrar Producto
-        </button>
+    <div className="productos-page">
+      <div className="page-header">
+        <div className="header-content">
+          <h1>Productos</h1>
+          <button className="btn-registrar" onClick={registrarProducto}>
+            <FontAwesomeIcon icon={faPlus} />
+            Registrar Producto
+          </button>
+        </div>
       </div>
 
+      <div className="search-bar">
+        <div className="input-group">
+          <span
+            className="input-group-text"
+            style={{
+              borderRadius: "12px 0 0 12px",
+              background: "white",
+              border: "2px solid #e9ecef",
+              borderRight: "none",
+            }}
+          >
+            <FontAwesomeIcon icon={faSearch} style={{ color: "#9b7fa8" }} />
+          </span>
+          <input
+            type="text"
+            className="form-control"
+            placeholder="Buscar productos por nombre, descripción o categoría..."
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            style={{ borderLeft: "none", borderRadius: "0 12px 12px 0" }}
+          />
+        </div>
+      </div>
+
+      {error && (
+        <div className="error-message">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+
       {loading && productos.length === 0 ? (
-        <div className="text-center">
+        <div className="loading-spinner">
           <FontAwesomeIcon icon={faSpinner} spin />
+          <p>Cargando productos...</p>
         </div>
       ) : (
-        <>
-          <DataTable
-            columns={columns}
-            data={productos}
-            pagination
-            highlightOnHover
-            responsive
-            noDataComponent="No hay productos disponibles"
-          />
-
-          <div className="text-center mt-3">
-            <button
-              className="btn btn-outline-primary"
-              onClick={cargarMas}
-              disabled={loading || !cursor}
-            >
-              {loading
-                ? "Cargando..."
-                : cursor
-                ? "Cargar más productos"
-                : "No hay más resultados"}
-            </button>
-          </div>
-        </>
+        <DataTable
+          columns={columns}
+          data={productosFiltrados}
+          pagination
+          paginationPerPage={10}
+          paginationRowsPerPageOptions={[10, 20, 50, 100]}
+          highlightOnHover
+          responsive
+          noDataComponent="No hay productos disponibles"
+          customStyles={customStyles}
+        />
       )}
 
       <BasicModal
         show={showModal}
-        setShow={
-          handleModalVisibility
-        } /* ← clave: wrap para refrescar al cerrar */
+        setShow={setShowModal}
         title={modalTitle}
         size={size || "lg"}
       >
