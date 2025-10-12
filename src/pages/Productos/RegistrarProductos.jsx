@@ -46,6 +46,7 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
   const [coloresSeleccionados, setColoresSeleccionados] = useState([]);
   const [variantes, setVariantes] = useState([]);
   const [costoVariante, setCostoVariante] = useState("");
+  const [aplicarPrecioVariantes, setAplicarPrecioVariantes] = useState(false); // 👈 Nuevo estado
 
   useEffect(() => {
     let mounted = true;
@@ -248,8 +249,34 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
     setLoading(true);
     try {
       if (producto?.id) {
-        // Modo edición: actualizar producto
-        await ProductoService.actualizarProducto(producto.id, productoPayload);
+        // Modo edición: actualizar producto con variantes
+        const variantesFormateadas = variantes.map((v) => ({
+          sku: v.sku.trim(),
+          atributos: v.atributos,
+          precio: parseFloat(v.precio),
+          costo: v.costo ? parseFloat(v.costo) : null,
+          activo: v.activo,
+        }));
+
+        const payload = {
+          ...productoPayload,
+          variantes: variantesFormateadas,
+          aplicarPrecioVariantes: aplicarPrecioVariantes, // 👈 Agregar el flag
+        };
+
+        console.log("📤 Enviando actualización de producto:");
+        console.log("   ID:", producto.id);
+        console.log("   Producto:", productoPayload);
+        console.log("   Variantes:", variantesFormateadas.length, "variantes");
+        console.log("   Aplicar precio a variantes:", aplicarPrecioVariantes);
+        console.log("   Payload completo:", payload);
+
+        const resultado = await ProductoService.actualizarProducto(
+          producto.id,
+          payload
+        );
+
+        console.log("✅ Respuesta del servidor:", resultado);
         toast.success("✅ Producto actualizado exitosamente");
       } else {
         // Modo creación: crear producto con variantes
@@ -271,7 +298,9 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
       if (refetch) await refetch();
       setShow(false);
     } catch (err) {
-      console.error("Error guardando producto:", err);
+      console.error("❌ Error guardando producto:", err);
+      console.error("   Mensaje:", err.message);
+      console.error("   Stack:", err.stack);
       toast.error(err.message || "Error al guardar el producto");
     } finally {
       setLoading(false);
@@ -353,6 +382,22 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
             min="0"
             required
           />
+          {producto?.id && variantes.length > 0 && (
+            <div className="checkbox-aplicar-precio">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={aplicarPrecioVariantes}
+                  onChange={(e) => setAplicarPrecioVariantes(e.target.checked)}
+                />
+                <span className="checkbox-text">
+                  <FontAwesomeIcon icon={faCheck} className="check-icon" />
+                  Aplicar nuevo precio a todas las variantes ({variantes.length}
+                  )
+                </span>
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="form-group">

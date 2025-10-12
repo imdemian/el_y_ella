@@ -16,10 +16,44 @@ export class VarianteService {
   }
 
   /**
+   * Obtener todas las variantes (con filtros opcionales)
+   */
+  static async obtenerVariantes(filtros = {}) {
+    // Por defecto, traer todas las variantes (activo = all)
+    const defaultFiltros = { activo: "all", ...filtros };
+    const params = new URLSearchParams(defaultFiltros);
+    const response = await fetch(`${API_URL}?${params}`, {
+      method: "GET",
+      headers: this._getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("No autorizado. Por favor inicia sesión nuevamente.");
+      }
+      const error = await response.json();
+      throw new Error(error.message || "Error al obtener variantes");
+    }
+
+    const result = await response.json();
+    console.log("Resultado del backend:", result);
+
+    // El backend devuelve { data, pagination, filters }
+    // Para el componente de códigos de barra, solo necesitamos los datos con información del producto
+    return result.data.map((v) => ({
+      ...v,
+      nombre_producto: v.productos?.nombre || "Sin nombre",
+      categoria_id: v.productos?.categorias?.id,
+      stock_actual: v.inventario_global?.cantidad_disponible || 0,
+      stock_minimo: v.inventario_global?.minimo_stock || 0,
+    }));
+  }
+
+  /**
    * Obtener todas las variantes de un producto
    */
   static async obtenerVariantesProducto(productoId) {
-    const response = await fetch(`${API_URL}/producto/${productoId}`, {
+    const response = await fetch(`${API_URL}?producto_id=${productoId}`, {
       method: "GET",
       headers: this._getAuthHeaders(),
     });
@@ -35,7 +69,8 @@ export class VarianteService {
       throw new Error(error.message || "Error al obtener variantes");
     }
 
-    return await response.json();
+    const result = await response.json();
+    return result.data;
   }
 
   /**

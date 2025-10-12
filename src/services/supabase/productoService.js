@@ -141,11 +141,18 @@ export class ProductoService {
    */
   static async actualizarProducto(id, productoData) {
     try {
+      console.log("🔧 ProductoService.actualizarProducto");
+      console.log("   URL:", `${API_BASE}/productos/${id}`);
+      console.log("   Payload:", productoData);
+
       const response = await fetch(`${API_BASE}/productos/${id}`, {
         method: "PUT",
         headers: this._getAuthHeaders(),
         body: JSON.stringify(productoData),
       });
+
+      console.log("   Status:", response.status);
+      console.log("   Status Text:", response.statusText);
 
       if (response.status === 404) {
         throw new Error("Producto no encontrado");
@@ -153,12 +160,16 @@ export class ProductoService {
 
       if (!response.ok) {
         const error = await response.json();
+        console.error("   Error del servidor:", error);
         throw new Error(error.error || "Error actualizando producto");
       }
 
-      return await response.json();
+      const resultado = await response.json();
+      console.log("   Respuesta exitosa:", resultado);
+
+      return resultado;
     } catch (error) {
-      console.error("Error en actualizarProducto:", error);
+      console.error("❌ Error en actualizarProducto:", error);
       throw error;
     }
   }

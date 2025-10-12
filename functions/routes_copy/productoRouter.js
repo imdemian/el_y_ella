@@ -1,6 +1,6 @@
 // functions/routes/productoRouter.js
 import express from "express";
-import { supabase } from "../config/supabase.js";
+import { supabaseAdmin as supabase } from "../config/supabase.js";
 import {
   authenticateToken,
   requireRole,
@@ -337,45 +337,224 @@ router.get("/stats/overview", async (req, res) => {
   }
 });
 
-// PUT /productos/:id - Actualizar producto
+// PUT /productos/:id - Actualizar producto con variantes
 router.put("/:id", requireRole(["admin", "manager"]), async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, descripcion, categoria_id, precio_base, marca, activo } =
-      req.body;
+    const {
+      nombre,
+      descripcion,
+      categoria_id,
+      precio_base,
+      marca,
+      activo,
+      variantes,
+      aplicarPrecioVariantes, // 👈 Nuevo flag
+    } = req.body;
 
-    const { data: producto, error } = await supabase
+    console.log("📝 PUT /productos/:id - Inicio");
+    console.log("   ID del producto:", id);
+    console.log("   Datos recibidos:", {
+      nombre,
+      descripcion,
+      categoria_id,
+      precio_base,
+      marca,
+      activo,
+    });
+    console.log("   Aplicar precio a variantes:", aplicarPrecioVariantes);
+    console.log("   Variantes recibidas:", variantes?.length || 0, "variantes");
+    if (variantes && variantes.length > 0) {
+      console.log(
+        "   SKUs de variantes:",
+        variantes.map((v) => v.sku)
+      );
+    }
+
+    // Actualizar datos del producto
+    console.log("🔄 Ejecutando UPDATE en productos...");
+    const updatePayload = {
+      nombre,
+      descripcion,
+      categoria_id,
+      precio_base,
+      marca,
+      activo,
+      updated_at: new Date(),
+    };
+    console.log("   Payload de actualización:", updatePayload);
+
+    const {
+      data: updatedData,
+      error: updateError,
+      count,
+    } = await supabase
       .from("productos")
-      .update({
-        nombre,
-        descripcion,
-        categoria_id,
-        precio_base,
-        marca,
-        activo,
-        updated_at: new Date(),
-      })
+      .update(updatePayload)
       .eq("id", id)
+      .select();
+
+    console.log("   Respuesta de UPDATE:");
+    console.log("   - Data:", updatedData);
+    console.log("   - Error:", updateError);
+    console.log("   - Count:", count);
+
+    if (updateError) {
+      console.error("❌ Error al actualizar producto:", updateError.message);
+      throw updateError;
+    }
+
+    if (!updatedData || updatedData.length === 0) {
+      console.error(
+        "❌ No se actualizó ningún registro. Posible problema de permisos RLS."
+      );
+      return res.status(404).json({
+        error: "Producto no encontrado o sin permisos para actualizar",
+      });
+    }
+
+    console.log("✅ Producto actualizado correctamente");
+
+    // Si el usuario marcó aplicar precio a todas las variantes
+    if (aplicarPrecioVariantes && precio_base) {
+      console.log("💰 Actualizando precio de todas las variantes...");
+
+      const { data: variantesActualizadas, error: errorPrecioVariantes } =
+        await supabase
+          .from("variantes_producto")
+          .update({ precio: precio_base })
+          .eq("producto_id", id)
+          .select("id");
+
+      if (errorPrecioVariantes) {
+        console.error(
+          "❌ Error al actualizar precios de variantes:",
+          errorPrecioVariantes.message
+        );
+        // No lanzamos error, solo advertimos
+      } else {
+        console.log(
+          `✅ ${
+            variantesActualizadas?.length || 0
+          } variantes actualizadas con nuevo precio: $${precio_base}`
+        );
+      }
+    }
+
+    // Si se enviaron variantes nuevas, crearlas
+    if (variantes && variantes.length > 0) {
+      console.log("🔍 Verificando variantes existentes...");
+
+      // Obtener SKUs existentes para este producto
+      const { data: variantesExistentes } = await supabase
+        .from("variantes_producto")
+        .select("sku")
+        .eq("producto_id", id);
+
+      console.log("   Variantes existentes:", variantesExistentes?.length || 0);
+      console.log(
+        "   SKUs existentes:",
+        variantesExistentes?.map((v) => v.sku) || []
+      );
+
+      const skusExistentes = new Set(
+        variantesExistentes?.map((v) => v.sku) || []
+      );
+
+      // Filtrar solo las variantes que no existen
+      const variantesNuevas = variantes.filter(
+        (v) => !skusExistentes.has(v.sku)
+      );
+
+      console.log("   Variantes nuevas a insertar:", variantesNuevas.length);
+      console.log(
+        "   SKUs nuevos:",
+        variantesNuevas.map((v) => v.sku)
+      );
+
+      if (variantesNuevas.length > 0) {
+        const variantesParaInsertar = variantesNuevas.map((variante) => ({
+          producto_id: id,
+          sku: variante.sku,
+          atributos: variante.atributos || {},
+          precio: variante.precio || precio_base,
+          costo: variante.costo,
+          activo: variante.activo !== false,
+        }));
+
+        const { error: errorVariantes } = await supabase
+          .from("variantes_producto")
+          .insert(variantesParaInsertar);
+
+        if (errorVariantes) {
+          console.error("❌ Error al crear variantes:", errorVariantes.message);
+          throw errorVariantes;
+        }
+
+        console.log("✅ Variantes insertadas correctamente");
+      } else {
+        console.log(
+          "ℹ️  No hay variantes nuevas para insertar (todas ya existen)"
+        );
+      }
+    } else {
+      console.log("ℹ️  No se enviaron variantes en la petición");
+    }
+
+    console.log("🔍 Obteniendo producto completo actualizado...");
+
+    // Obtener producto completo actualizado con todas las variantes
+    const { data: productoCompleto, error: errorFinal } = await supabase
+      .from("productos")
       .select(
         `
-        id,
-        nombre,
-        precio_base,
-        categorias (id, nombre)
+        *,
+        categorias (id, nombre),
+        variantes_producto (
+          id,
+          sku,
+          atributos,
+          precio,
+          costo,
+          activo,
+          inventario_global (cantidad_disponible)
+        )
       `
       )
-      .single();
+      .eq("id", id);
 
-    if (error) {
-      console.error("Error al actualizar producto:", error.message);
-      throw error;
+    if (errorFinal) {
+      console.error(
+        "❌ Error al obtener producto completo:",
+        errorFinal.message
+      );
+      throw errorFinal;
     }
-    if (!producto)
-      return res.status(404).json({ error: "Producto no encontrado" });
 
-    res.json(producto);
+    console.log("📦 Producto completo obtenido");
+    console.log(
+      "   Tipo de data:",
+      Array.isArray(productoCompleto) ? "Array" : typeof productoCompleto
+    );
+    console.log(
+      "   Cantidad de elementos:",
+      Array.isArray(productoCompleto) ? productoCompleto.length : "N/A"
+    );
+
+    if (Array.isArray(productoCompleto) && productoCompleto.length > 0) {
+      console.log(
+        "   Variantes en respuesta:",
+        productoCompleto[0]?.variantes_producto?.length || 0
+      );
+    }
+
+    // Retornar el primer (y único) producto
+    const resultado = productoCompleto?.[0] || productoCompleto;
+    console.log("✅ Enviando respuesta al cliente");
+
+    res.json(resultado);
   } catch (error) {
-    console.error("Error en PUT /productos/:id:", error.message);
+    console.error("❌ Error en PUT /productos/:id:", error.message);
     res.status(500).json({ error: error.message });
   }
 });

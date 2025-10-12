@@ -18,7 +18,7 @@ router.get("/", async (req, res) => {
       page = 1,
       limit = 50,
       producto_id,
-      activo = true,
+      activo = "all",
       search = "",
     } = req.query;
 
@@ -26,11 +26,16 @@ router.get("/", async (req, res) => {
     const limitInt = parseInt(limit);
     const offset = (pageInt - 1) * limitInt;
 
-    // Construir query base
+    // Construir query base con categorías incluidas
     let query = supabase.from("variantes_producto").select(
       `
         *,
-        productos (id, nombre, precio_base),
+        productos (
+          id, 
+          nombre, 
+          precio_base,
+          categorias (id, nombre)
+        ),
         inventario_global (
           cantidad_disponible,
           cantidad_reservada,
@@ -50,7 +55,7 @@ router.get("/", async (req, res) => {
     }
 
     if (activo !== "all") {
-      query = query.eq("activo", activo === "true");
+      query = query.eq("activo", activo === "true" || activo === true);
     }
 
     // Ordenamiento y paginación
