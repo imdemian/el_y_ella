@@ -67,7 +67,7 @@ const Sidebar = () => {
   const menuItems = [
     { title: "Inicio", route: "/home", icon: faHome },
     { title: "Ventas", route: "/ventas", icon: faMoneyBill1 },
-    { title: "Etiquetas", route: "/etiquetas", icon: faTag },
+    { title: "Etiquetas", route: "/codigos-barra", icon: faTag },
     { title: "Productos", route: "/productos", icon: faBoxesStacked },
     { title: "Inventario", route: "/inventario", icon: faWarehouse },
     { title: "Usuarios", route: "/usuarios", icon: faUsers },

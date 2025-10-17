@@ -1,635 +1,591 @@
-// src/pages/CodigosBarra.jsx
-import React, { useCallback, useRef, useState } from "react";
+import React, { useState, useEffect } from "react";
 import Barcode from "react-barcode";
-import jsPDF from "jspdf";
-import JsBarcode from "jsbarcode";
-import {
-  buscarProductos,
-  obtenerProducto,
-  lookupPorBarcode,
-  lookupPorSku,
-} from "../../services/productoService";
 import { toast } from "react-toastify";
+import jsPDF from "jspdf";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faSearch,
+  faFilter,
+  faBarcode,
+  faFilePdf,
+  faTrash,
+  faPlus,
+  faMinus,
+  faEye,
+} from "@fortawesome/free-solid-svg-icons";
+import { VarianteService } from "../../services/supabase/varianteService";
+import { CategoriaService } from "../../services/supabase/categoriaService";
+import BasicModal from "../../components/BasicModal/BasicModal";
+import "./CodigosBarra.scss";
 
-// Config por defecto de la grilla de etiquetas
-const DEFAULTS = {
-  page: "a4", // "a4" | "letter"
-  cols: 4, // columnas por página
-  labelW: 48, // ancho (mm)
-  labelH: 30, // alto (mm)
-  marginL: 8, // margen izq (mm)
-  marginT: 10, // margen sup (mm)
-  gapX: 2, // separación x (mm)
-  gapY: 2, // separación y (mm)
-};
+const CodigosBarra = () => {
+  const [variantes, setVariantes] = useState([]);
+  const [variantesFiltradas, setVariantesFiltradas] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedVariantes, setSelectedVariantes] = useState(new Map());
+  const [etiquetasParaImprimir, setEtiquetasParaImprimir] = useState([]);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
 
-// Debounce simple
-function useDebouncedCallback(cb, delay) {
-  const ref = useRef();
-  return useCallback(
-    (...args) => {
-      clearTimeout(ref.current);
-      ref.current = setTimeout(() => cb(...args), delay);
-    },
-    [cb, delay]
-  );
-}
+  // Filtros
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoriaFilter, setCategoriaFilter] = useState("");
+  const [stockFilter, setStockFilter] = useState("todos");
+  const [showFilters, setShowFilters] = useState(false);
 
-export default function CodigosBarra() {
-  const [busqueda, setBusqueda] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadingDetalle, setLoadingDetalle] = useState(false);
-
-  // Resultados slim desde el servidor (sin variantes)
-  const [resultados, setResultados] = useState([]); // [{id, nombre, ...}]
-  const [next, setNext] = useState(null); // para "cargar más" si quieres extender
-
-  // Producto seleccionado con variantes completas
-  const [productoSel, setProductoSel] = useState(null); // { id, nombre, variantes: [...] }
-
-  // Variantes elegidas para imprimir
-  const [selecciones, setSelecciones] = useState([]);
-
-  // Modo de valor de código a imprimir (barcode > sku > idVariante, o sku > barcode)
-  const [prioridadValor, setPrioridadValor] = useState("barcodeFirst"); // "barcodeFirst" | "skuFirst"
-
-  const toStr = (v) => (v == null ? "" : String(v));
-
-  const variantLabel = (v) => {
-    const attrs = v?.atributos || {};
-    const parts = Object.entries(attrs).map(([k, val]) => `${k}: ${val}`);
-    return parts.join(" · ");
-  };
-
-  const getPreferredCode = (v) => {
-    const bar = toStr(v?.barcode);
-    const sku = toStr(v?.sku);
-    const id = toStr(v?.id);
-    if (prioridadValor === "barcodeFirst") {
-      return bar || sku || id;
-    } else {
-      return sku || bar || id;
-    }
-  };
-
-  // ------- Buscar (server-side) con debounce
-  const doSearch = useCallback(async (q) => {
-    if (!q || q.trim().length < 2) {
-      setResultados([]);
-      setNext(null);
-      setProductoSel(null);
-      return;
-    }
-    setLoading(true);
-    try {
-      const { items = [], next: nextCursor = null } = await buscarProductos({
-        q,
-        limit: 20,
-      });
-      setResultados(items);
-      setNext(nextCursor);
-      setProductoSel(null); // resetea el detalle al cambiar búsqueda
-    } catch (err) {
-      console.error(err);
-      toast.error("Error buscando productos");
-    } finally {
-      setLoading(false);
-    }
+  // Cargar datos iniciales
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [variantesData, categoriasData] = await Promise.all([
+          VarianteService.obtenerVariantes(),
+          CategoriaService.obtenerCategorias(),
+        ]);
+        setVariantes(variantesData);
+        setVariantesFiltradas(variantesData);
+        setCategorias(categoriasData);
+      } catch (error) {
+        toast.error(error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
   }, []);
 
-  const debouncedSearch = useDebouncedCallback(doSearch, 300);
+  // Aplicar filtros
+  useEffect(() => {
+    let resultado = [...variantes];
 
-  // Maneja input del buscador
-  const handleChangeBusqueda = (e) => {
-    const val = e.target.value;
-    setBusqueda(val);
-    debouncedSearch(val);
-  };
-
-  // Enter en el buscador → intenta lookup directo por barcode/sku
-  const handleKeyDownBusqueda = async (e) => {
-    if (e.key !== "Enter") return;
-    const q = busqueda.trim();
-    if (!q) return;
-
-    // Primero intentamos barcode, luego SKU
-    try {
-      setLoading(true);
-      let hit;
-      try {
-        hit = await lookupPorBarcode(q);
-      } catch {
-        // intenta sku si barcode no está
-        hit = await lookupPorSku(q.toLowerCase());
-      }
-
-      if (!hit || !hit.success) {
-        toast.info("No se encontró producto/variante con ese código.");
-        return;
-      }
-
-      // Trae el producto completo y agrega la variante a la lista
-      await cargarProductoYAgregarVariante(hit.productId, hit.variantId);
-      // Limpia búsqueda para nuevo escaneo rápido
-      setBusqueda("");
-      setResultados([]);
-      setNext(null);
-    } catch (err) {
-      console.error(err);
-      toast.error("No se pudo resolver el código.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const cargarProducto = async (id) => {
-    setLoadingDetalle(true);
-    try {
-      const prod = await obtenerProducto(id);
-      setProductoSel(prod);
-    } catch (err) {
-      console.error(err);
-      toast.error("Error cargando producto");
-    } finally {
-      setLoadingDetalle(false);
-    }
-  };
-
-  const cargarProductoYAgregarVariante = async (productId, variantId) => {
-    try {
-      const prod = await obtenerProducto(productId);
-      const v = (prod.variantes || []).find((x) => x.id === variantId);
-      if (!v) {
-        toast.error("La variante no existe en el producto.");
-        return;
-      }
-      setProductoSel(prod);
-      agregarVariante(prod, v);
-    } catch (err) {
-      console.error(err);
-      toast.error("No se pudo cargar el producto/variante");
-    }
-  };
-
-  // Agregar / quitar / cantidad
-  const agregarVariante = (producto, variante) => {
-    const clave = `${producto.id}_${variante.id}`;
-    if (!selecciones.some((s) => s.id === clave)) {
-      setSelecciones((prev) => [
-        ...prev,
-        {
-          id: clave,
-          cantidad: 1,
-          productoId: producto.id,
-          varianteId: variante.id,
-          sku: toStr(variante.sku),
-          barcode: toStr(variante.barcode),
-          precio: variante.precio ?? producto.precioBase ?? null,
-          nombreProducto: toStr(producto.nombre),
-          atributosTxt: variantLabel(variante),
-        },
-      ]);
-    } else {
-      // si ya existe, incrementa
-      setSelecciones((prev) =>
-        prev.map((s) =>
-          s.id === clave ? { ...s, cantidad: s.cantidad + 1 } : s
-        )
+    // Filtro de búsqueda
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase();
+      resultado = resultado.filter(
+        (v) =>
+          v.nombre_producto?.toLowerCase().includes(search) ||
+          v.sku?.toLowerCase().includes(search) ||
+          JSON.stringify(v.atributos || {})
+            .toLowerCase()
+            .includes(search)
       );
     }
+
+    // Filtro de categoría
+    if (categoriaFilter) {
+      resultado = resultado.filter(
+        (v) => v.categoria_id === parseInt(categoriaFilter)
+      );
+    }
+
+    // Filtro de stock
+    if (stockFilter === "con-stock") {
+      resultado = resultado.filter((v) => v.stock_actual > 0);
+    } else if (stockFilter === "sin-stock") {
+      resultado = resultado.filter((v) => v.stock_actual === 0);
+    } else if (stockFilter === "bajo-stock") {
+      resultado = resultado.filter(
+        (v) => v.stock_actual > 0 && v.stock_actual <= v.stock_minimo
+      );
+    }
+
+    setVariantesFiltradas(resultado);
+  }, [searchTerm, categoriaFilter, stockFilter, variantes]);
+
+  // Manejo de selección de variantes
+  const toggleVariante = (variante) => {
+    const newSelected = new Map(selectedVariantes);
+    if (newSelected.has(variante.id)) {
+      newSelected.delete(variante.id);
+    } else {
+      newSelected.set(variante.id, { ...variante, cantidad: 1 });
+    }
+    setSelectedVariantes(newSelected);
   };
 
-  const actualizarCantidad = (clave, nuevaCantidad) => {
-    setSelecciones((prev) =>
-      prev.map((s) =>
-        s.id === clave
-          ? { ...s, cantidad: Math.max(1, Number(nuevaCantidad) || 1) }
-          : s
-      )
+  const updateCantidad = (id, cantidad) => {
+    const newSelected = new Map(selectedVariantes);
+    const variante = newSelected.get(id);
+    if (variante) {
+      variante.cantidad = Math.max(1, cantidad);
+      setSelectedVariantes(newSelected);
+    }
+  };
+
+  const incrementarCantidad = (id) => {
+    const variante = selectedVariantes.get(id);
+    if (variante) {
+      updateCantidad(id, variante.cantidad + 1);
+    }
+  };
+
+  const decrementarCantidad = (id) => {
+    const variante = selectedVariantes.get(id);
+    if (variante && variante.cantidad > 1) {
+      updateCantidad(id, variante.cantidad - 1);
+    }
+  };
+
+  const limpiarSeleccion = () => {
+    setSelectedVariantes(new Map());
+    toast.info("Selección limpiada");
+  };
+
+  const handleGenerarEtiquetas = () => {
+    if (selectedVariantes.size === 0) {
+      toast.warn("Por favor, selecciona al menos una variante.");
+      return;
+    }
+
+    const etiquetas = [];
+    selectedVariantes.forEach((variante) => {
+      for (let i = 0; i < variante.cantidad; i++) {
+        etiquetas.push(variante);
+      }
+    });
+    setEtiquetasParaImprimir(etiquetas);
+    toast.success(
+      `${etiquetas.length} etiquetas generadas. Haz clic en "Ver Vista Previa" para revisarlas.`
     );
   };
 
-  const eliminarVariante = (clave) => {
-    setSelecciones((prev) => prev.filter((s) => s.id !== clave));
-  };
-
-  const limpiarSelecciones = () => setSelecciones([]);
-
-  // Resultados enriquecidos: si el usuario hace clic en un producto de resultados, cargamos su detalle
-  const handleSelectProducto = async (id) => {
-    await cargarProducto(id);
-  };
-
-  // ---------- PDF helpers
-  const makeBarcodeDataURL = (valor, opts = {}) => {
-    const canvas = document.createElement("canvas");
-    JsBarcode(canvas, valor, {
-      format: "CODE128",
-      displayValue: false,
-      margin: 0,
-      width: 2,
-      height: 30,
-      ...opts,
-    });
-    return canvas.toDataURL("image/png");
-  };
-
-  const imprimirPDF = async (opciones = {}) => {
-    if (selecciones.length === 0) {
-      toast.info("No hay etiquetas para imprimir");
+  const handleExportPDF = async () => {
+    if (etiquetasParaImprimir.length === 0) {
+      toast.error("Primero debes generar las etiquetas.");
       return;
     }
-    const {
-      page = DEFAULTS.page,
-      cols = DEFAULTS.cols,
-      labelW = DEFAULTS.labelW,
-      labelH = DEFAULTS.labelH,
-      marginL = DEFAULTS.marginL,
-      marginT = DEFAULTS.marginT,
-      gapX = DEFAULTS.gapX,
-      gapY = DEFAULTS.gapY,
-      showSku = true,
-      showProducto = false,
-      showAtributos = true,
-      showPrecio = false,
-      fontSize = 8,
-    } = opciones;
 
-    const doc = new jsPDF({ unit: "mm", format: page });
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
+    toast.info("Generando PDF, por favor espera...");
 
-    const colW = labelW + gapX;
-    const rowH = labelH + gapY;
+    try {
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
 
-    let x = marginL;
-    let y = marginT;
-    let col = 0;
+      // Dimensiones de la etiqueta (2" x 1" = 50.8mm x 25.4mm)
+      const labelWidth = 50.8;
+      const labelHeight = 25.4;
+      const margin = 10;
+      const spacing = 5;
 
-    // Expandir según cantidad
-    const etiquetas = [];
-    selecciones.forEach((s) => {
-      const total = Number(s.cantidad || 0);
-      // Determina el valor a codificar según preferencia actual
-      const value =
-        prioridadValor === "barcodeFirst"
-          ? toStr(s.barcode || s.sku || s.varianteId)
-          : toStr(s.sku || s.barcode || s.varianteId);
+      // Calcular cuántas etiquetas caben por fila y columna
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const labelsPerRow = Math.floor(
+        (pageWidth - 2 * margin + spacing) / (labelWidth + spacing)
+      );
+      const labelsPerColumn = Math.floor(
+        (pageHeight - 2 * margin + spacing) / (labelHeight + spacing)
+      );
+      const labelsPerPage = labelsPerRow * labelsPerColumn;
 
-      for (let i = 0; i < total; i++) {
-        etiquetas.push({ ...s, value });
-      }
-    });
+      let labelIndex = 0;
 
-    etiquetas.forEach((s) => {
-      if (!s.value) return;
+      for (let i = 0; i < etiquetasParaImprimir.length; i++) {
+        const etiqueta = etiquetasParaImprimir[i];
 
-      const png = makeBarcodeDataURL(s.value);
-      const padding = 2;
-      const innerW = labelW - padding * 2;
+        // Calcular posición en el grid
+        const posInPage = labelIndex % labelsPerPage;
+        const row = Math.floor(posInPage / labelsPerRow);
+        const col = posInPage % labelsPerRow;
 
-      // Calcula alturas: reserva ~5mm por línea de texto
-      let textLines = 0;
-      if (showProducto && s.nombreProducto) textLines++;
-      if (showAtributos && s.atributosTxt) textLines++;
-      if (showSku && (s.sku || s.varianteId)) textLines++;
-      if (showPrecio && s.precio != null) textLines++;
+        const x = margin + col * (labelWidth + spacing);
+        const y = margin + row * (labelHeight + spacing);
 
-      const textBlockH = textLines * 5;
-      const barcodeH = Math.max(12, labelH - padding * 2 - textBlockH);
-
-      // doc.rect(x, y, labelW, labelH); // (debug) marco
-      doc.addImage(png, "PNG", x + padding, y + padding, innerW, barcodeH);
-
-      let ty = y + padding + barcodeH + 3;
-      doc.setFontSize(fontSize);
-      const center = x + labelW / 2;
-
-      if (showProducto && s.nombreProducto) {
-        doc.text(toStr(s.nombreProducto), center, ty, {
-          align: "center",
-          maxWidth: innerW,
-        });
-        ty += 5;
-      }
-      if (showAtributos && s.atributosTxt) {
-        doc.text(toStr(s.atributosTxt), center, ty, {
-          align: "center",
-          maxWidth: innerW,
-        });
-        ty += 5;
-      }
-      if (showSku) {
-        doc.text(toStr(s.sku || s.varianteId), center, ty, {
-          align: "center",
-          maxWidth: innerW,
-        });
-        ty += 5;
-      }
-      if (showPrecio && s.precio != null) {
-        doc.text(`$${Number(s.precio).toFixed(2)}`, center, y + labelH - 2, {
-          align: "center",
-        });
-      }
-
-      // Avanza grilla
-      col++;
-      if (col >= cols) {
-        col = 0;
-        x = marginL;
-        y += rowH;
-        if (y + labelH + marginT > pageH) {
-          doc.addPage();
-          y = marginT;
+        // Si no es la primera etiqueta y necesitamos nueva página
+        if (i > 0 && posInPage === 0) {
+          pdf.addPage();
         }
-      } else {
-        x += colW;
-        if (x + labelW + marginL > pageW) {
-          col = 0;
-          x = marginL;
-          y += rowH;
-          if (y + labelH + marginT > pageH) {
-            doc.addPage();
-            y = marginT;
-          }
-        }
-      }
-    });
 
-    doc.save("etiquetas.pdf");
+        // Dibujar borde de la etiqueta
+        pdf.setDrawColor(200, 200, 200);
+        pdf.setLineWidth(0.1);
+        pdf.rect(x, y, labelWidth, labelHeight);
+
+        // Dibujar precio
+        pdf.setFontSize(12);
+        pdf.setFont("helvetica", "bold");
+        const precio = `$${parseFloat(etiqueta.precio).toLocaleString("es-MX", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`;
+        const precioWidth = pdf.getTextWidth(precio);
+        pdf.text(precio, x + (labelWidth - precioWidth) / 2, y + 8);
+
+        // Generar código de barras como imagen
+        const barcodeCanvas = document.createElement("canvas");
+        const JsBarcode = (await import("jsbarcode")).default;
+        JsBarcode(barcodeCanvas, etiqueta.sku, {
+          format: "CODE128",
+          width: 1,
+          height: 30,
+          displayValue: true,
+          fontSize: 10,
+          margin: 0,
+        });
+
+        // Agregar código de barras al PDF
+        const barcodeImage = barcodeCanvas.toDataURL("image/png");
+        const barcodeWidth = labelWidth - 4;
+        const barcodeHeight = 12;
+        pdf.addImage(
+          barcodeImage,
+          "PNG",
+          x + 2,
+          y + labelHeight - barcodeHeight - 2,
+          barcodeWidth,
+          barcodeHeight
+        );
+
+        labelIndex++;
+      }
+
+      pdf.save("etiquetas-codigos-de-barra.pdf");
+      toast.success("PDF exportado exitosamente.");
+      setShowPreviewModal(false);
+    } catch (error) {
+      console.error("Error generando PDF:", error);
+      toast.error("Error al generar el PDF");
+    }
   };
 
-  // Render
+  // Función para obtener el nombre de la categoría
+  const getNombreCategoria = (categoriaId) => {
+    const categoria = categorias.find((c) => c.id === categoriaId);
+    return categoria ? categoria.nombre : "Sin categoría";
+  };
+
+  // Función para formatear atributos
+  const formatAtributos = (atributos) => {
+    if (!atributos || typeof atributos !== "object") return "";
+    return Object.entries(atributos)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(" | ");
+  };
+
   return (
-    <div className="container mt-4">
-      <h2>Gestor de Códigos de Barras</h2>
+    <div className="codigos-barra-page">
+      {/* Header con controles principales */}
+      <div className="page-header">
+        <div className="header-info">
+          <h1>
+            <FontAwesomeIcon icon={faBarcode} /> Generador de Códigos de Barra
+          </h1>
+          <p className="subtitle">
+            Busca productos, selecciona variantes y genera etiquetas para
+            imprimir
+          </p>
+        </div>
 
-      <div className="row mt-3">
-        {/* Buscador y resultados (server-side) */}
-        <div className="col-md-6">
-          <div className="d-flex justify-content-between align-items-end">
-            <div style={{ flex: 1, marginRight: 12 }}>
-              <label className="form-label">Buscar</label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="Nombre, ID, SKU, Barcode, talla/color… (Enter para escanear)"
-                value={busqueda}
-                onChange={handleChangeBusqueda}
-                onKeyDown={handleKeyDownBusqueda}
-                disabled={loading}
-              />
-              <small className="text-muted">
-                Consejos: escribe al menos 2 caracteres para buscar. Presiona
-                <strong> Enter</strong> para resolver <em>barcode</em> o{" "}
-                <em>SKU</em> directo.
-              </small>
-            </div>
+        <div className="header-actions">
+          <button
+            className="btn btn-filter"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <FontAwesomeIcon icon={faFilter} /> Filtros
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={handleGenerarEtiquetas}
+            disabled={selectedVariantes.size === 0}
+          >
+            <FontAwesomeIcon icon={faBarcode} /> Generar Etiquetas (
+            {selectedVariantes.size})
+          </button>
+          {etiquetasParaImprimir.length > 0 && (
+            <button
+              className="btn btn-info"
+              onClick={() => setShowPreviewModal(true)}
+            >
+              <FontAwesomeIcon icon={faEye} /> Ver Vista Previa
+            </button>
+          )}
+          <button
+            className="btn btn-success"
+            onClick={handleExportPDF}
+            disabled={etiquetasParaImprimir.length === 0}
+          >
+            <FontAwesomeIcon icon={faFilePdf} /> Exportar PDF
+          </button>
+        </div>
+      </div>
 
-            <div>
-              <label className="form-label">Valor a imprimir</label>
-              <select
-                className="form-select"
-                value={prioridadValor}
-                onChange={(e) => setPrioridadValor(e.target.value)}
-              >
-                <option value="barcodeFirst">Barcode → SKU → ID</option>
-                <option value="skuFirst">SKU → Barcode → ID</option>
-              </select>
-            </div>
-          </div>
+      {/* Barra de búsqueda */}
+      <div className="search-bar">
+        <div className="search-input-wrapper">
+          <FontAwesomeIcon icon={faSearch} className="search-icon" />
+          <input
+            type="text"
+            className="search-input"
+            placeholder="Buscar por nombre, SKU o atributos..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          {searchTerm && (
+            <button
+              className="clear-search"
+              onClick={() => setSearchTerm("")}
+              title="Limpiar búsqueda"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
 
-          {loading && <p className="text-muted mt-3">Buscando…</p>}
-
-          {/* Lista de resultados */}
-          {!loading && resultados.length > 0 && (
-            <ul className="list-group mt-3">
-              {resultados.map((p) => (
-                <li
-                  key={p.id}
-                  className="list-group-item d-flex justify-content-between align-items-center"
-                >
-                  <div>
-                    <strong>{p.nombre}</strong>
-                    {p.categoria && (
-                      <span className="ms-2 badge bg-light text-dark">
-                        {p.categoria}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    className="btn btn-sm btn-outline-primary"
-                    onClick={() => handleSelectProducto(p.id)}
-                  >
-                    Ver variantes
-                  </button>
-                </li>
+      {/* Panel de filtros */}
+      {showFilters && (
+        <div className="filters-panel">
+          <div className="filter-group">
+            <label>Categoría:</label>
+            <select
+              value={categoriaFilter}
+              onChange={(e) => setCategoriaFilter(e.target.value)}
+              className="filter-select"
+            >
+              <option value="">Todas las categorías</option>
+              {categorias.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.nombre}
+                </option>
               ))}
-            </ul>
-          )}
-
-          {!loading &&
-            resultados.length === 0 &&
-            busqueda.trim().length >= 2 && (
-              <p className="text-muted mt-3">Sin resultados.</p>
-            )}
-        </div>
-
-        {/* Variantes del producto seleccionado */}
-        <div className="col-md-6">
-          <div className="d-flex justify-content-between align-items-center">
-            <h5>Variantes del producto</h5>
-            {selecciones.length > 0 && (
-              <button
-                className="btn btn-sm btn-outline-secondary"
-                onClick={limpiarSelecciones}
-              >
-                Limpiar etiquetas
-              </button>
-            )}
+            </select>
           </div>
 
-          {loadingDetalle && <p className="text-muted">Cargando variantes…</p>}
-
-          {!loadingDetalle && productoSel && (
-            <div className="mt-2">
-              <div className="mb-2">
-                <strong>{productoSel.nombre}</strong>
-                {productoSel.categoria && (
-                  <span className="ms-2 badge bg-light text-dark">
-                    {productoSel.categoria}
-                  </span>
-                )}
-              </div>
-
-              {(productoSel.variantes || []).length === 0 ? (
-                <p className="text-muted">Este producto no tiene variantes.</p>
-              ) : (
-                <ul className="list-group">
-                  {productoSel.variantes.map((v) => (
-                    <li
-                      key={v.id}
-                      className="list-group-item d-flex justify-content-between align-items-center"
-                    >
-                      <div>
-                        <div className="fw-semibold">
-                          <code>{v.sku || "—SKU—"}</code>{" "}
-                          <span className="text-muted">({v.id})</span>
-                        </div>
-                        <div className="small text-muted">
-                          {variantLabel(v) || "—"}
-                        </div>
-                        {v.barcode && (
-                          <small className="text-success">
-                            [barcode: {v.barcode}]
-                          </small>
-                        )}
-                      </div>
-                      <button
-                        className="btn btn-sm btn-outline-success"
-                        onClick={() => agregarVariante(productoSel, v)}
-                      >
-                        Agregar
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {!productoSel && (
-            <p className="text-muted mt-2">
-              Selecciona un producto de los resultados para ver sus variantes, o
-              escanéa un código y presiona Enter.
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Selecciones actuales */}
-      <div className="mt-4">
-        <h5>Etiquetas a imprimir</h5>
-        {selecciones.length === 0 ? (
-          <p className="text-muted">No hay variantes seleccionadas.</p>
-        ) : (
-          <ul className="list-group">
-            {selecciones.map((s) => (
-              <li
-                key={s.id}
-                className="list-group-item d-flex justify-content-between align-items-center"
-              >
-                <div className="me-3">
-                  <div className="fw-semibold">{s.nombreProducto}</div>
-                  <div className="small text-muted">
-                    {s.atributosTxt || "—"}
-                  </div>
-                  <div>
-                    <span className="badge bg-secondary me-2">
-                      {s.sku || s.varianteId}
-                    </span>
-                    <span className="badge bg-light text-dark">
-                      #{s.barcode || "—"}
-                    </span>
-                  </div>
-                </div>
-                <div className="d-flex align-items-center gap-2">
-                  <input
-                    type="number"
-                    className="form-control form-control-sm"
-                    value={s.cantidad}
-                    onChange={(e) =>
-                      actualizarCantidad(s.id, Number(e.target.value))
-                    }
-                    min={1}
-                    style={{ width: "90px" }}
-                  />
-                  <button
-                    className="btn btn-sm btn-outline-danger"
-                    onClick={() => eliminarVariante(s.id)}
-                  >
-                    Quitar
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Previsualización y acciones */}
-      {selecciones.length > 0 && (
-        <div className="mt-4">
-          <h4>Previsualización</h4>
-          <div className="d-flex flex-wrap gap-4">
-            {selecciones.map((s) =>
-              Array.from({ length: s.cantidad }).map((_, idx) => {
-                const value =
-                  prioridadValor === "barcodeFirst"
-                    ? toStr(s.barcode || s.sku || s.varianteId)
-                    : toStr(s.sku || s.barcode || s.varianteId);
-                return (
-                  <div key={`${s.id}-${idx}`} className="text-center">
-                    <Barcode
-                      value={value}
-                      format="CODE128"
-                      width={2}
-                      height={80}
-                      fontSize={14}
-                      displayValue={false}
-                    />
-                    <div style={{ fontSize: "0.8rem" }}>
-                      <div className="fw-semibold">{s.sku || s.varianteId}</div>
-                      <div className="text-muted">{s.atributosTxt}</div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <div className="mt-3 d-flex gap-2">
-            <button
-              className="btn btn-primary"
-              onClick={() =>
-                imprimirPDF({
-                  page: "a4",
-                  cols: 4,
-                  labelW: 48,
-                  labelH: 30,
-                  showSku: true,
-                  showProducto: false,
-                  showAtributos: true,
-                  showPrecio: false,
-                })
-              }
+          <div className="filter-group">
+            <label>Estado de Stock:</label>
+            <select
+              value={stockFilter}
+              onChange={(e) => setStockFilter(e.target.value)}
+              className="filter-select"
             >
-              Imprimir etiquetas (PDF)
-            </button>
-
-            <button
-              className="btn btn-outline-primary"
-              onClick={() =>
-                imprimirPDF({
-                  page: "letter",
-                  cols: 3,
-                  labelW: 66.6,
-                  labelH: 25.4,
-                  marginL: 5,
-                  marginT: 10,
-                  gapX: 2,
-                  gapY: 2,
-                  showSku: true,
-                  showProducto: false,
-                  showAtributos: false,
-                })
-              }
-            >
-              PDF (Carta / 3 col)
-            </button>
+              <option value="todos">Todos</option>
+              <option value="con-stock">Con stock disponible</option>
+              <option value="sin-stock">Sin stock</option>
+              <option value="bajo-stock">Stock bajo (≤ mínimo)</option>
+            </select>
           </div>
+
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => {
+              setSearchTerm("");
+              setCategoriaFilter("");
+              setStockFilter("todos");
+            }}
+          >
+            Limpiar filtros
+          </button>
         </div>
       )}
+
+      {/* Contador de resultados */}
+      <div className="results-info">
+        <p>
+          Mostrando <strong>{variantesFiltradas.length}</strong> de{" "}
+          <strong>{variantes.length}</strong> variantes
+          {selectedVariantes.size > 0 && (
+            <>
+              {" "}
+              · <strong>{selectedVariantes.size}</strong> seleccionadas
+              <button className="btn-link" onClick={limpiarSeleccion}>
+                <FontAwesomeIcon icon={faTrash} /> Limpiar selección
+              </button>
+            </>
+          )}
+        </p>
+      </div>
+
+      {/* Grid de variantes */}
+      {loading ? (
+        <div className="loading-container">
+          <div className="spinner"></div>
+          <p>Cargando variantes...</p>
+        </div>
+      ) : variantesFiltradas.length === 0 ? (
+        <div className="empty-state">
+          <FontAwesomeIcon icon={faSearch} size="3x" />
+          <h3>No se encontraron variantes</h3>
+          <p>
+            Intenta ajustar los filtros o la búsqueda para ver más resultados.
+          </p>
+        </div>
+      ) : (
+        <div className="variantes-grid">
+          {variantesFiltradas.map((variante) => {
+            const isSelected = selectedVariantes.has(variante.id);
+            const selectedData = selectedVariantes.get(variante.id);
+
+            return (
+              <div
+                key={variante.id}
+                className={`variante-card ${isSelected ? "selected" : ""}`}
+                onClick={() => toggleVariante(variante)}
+              >
+                <div className="card-header">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleVariante(variante)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="checkbox-select"
+                  />
+                  <span className="producto-nombre">
+                    {variante.nombre_producto}
+                  </span>
+                </div>
+
+                <div className="card-body">
+                  <div className="info-row">
+                    <span className="label">SKU:</span>
+                    <span className="value sku">{variante.sku}</span>
+                  </div>
+
+                  <div className="info-row">
+                    <span className="label">Categoría:</span>
+                    <span className="value">
+                      {getNombreCategoria(variante.categoria_id)}
+                    </span>
+                  </div>
+
+                  {variante.atributos &&
+                    Object.keys(variante.atributos).length > 0 && (
+                      <div className="info-row">
+                        <span className="label">Atributos:</span>
+                        <span className="value atributos">
+                          {formatAtributos(variante.atributos)}
+                        </span>
+                      </div>
+                    )}
+
+                  <div className="info-row">
+                    <span className="label">Stock:</span>
+                    <span
+                      className={`value stock ${
+                        variante.stock_actual === 0
+                          ? "sin-stock"
+                          : variante.stock_actual <= variante.stock_minimo
+                          ? "bajo-stock"
+                          : "con-stock"
+                      }`}
+                    >
+                      {variante.stock_actual || 0} unidades
+                    </span>
+                  </div>
+                </div>
+
+                {isSelected && (
+                  <div
+                    className="card-footer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <label>Cantidad de etiquetas:</label>
+                    <div className="cantidad-control">
+                      <button
+                        className="btn-cantidad"
+                        onClick={() => decrementarCantidad(variante.id)}
+                        disabled={selectedData.cantidad <= 1}
+                      >
+                        <FontAwesomeIcon icon={faMinus} />
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        value={selectedData.cantidad}
+                        onChange={(e) =>
+                          updateCantidad(
+                            variante.id,
+                            parseInt(e.target.value) || 1
+                          )
+                        }
+                        className="input-cantidad"
+                      />
+                      <button
+                        className="btn-cantidad"
+                        onClick={() => incrementarCantidad(variante.id)}
+                      >
+                        <FontAwesomeIcon icon={faPlus} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal de Vista Previa */}
+      <BasicModal
+        setShow={setShowPreviewModal}
+        show={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        title={
+          <div className="modal-title-preview">
+            <FontAwesomeIcon icon={faFilePdf} />
+            <span>Vista Previa de Etiquetas</span>
+          </div>
+        }
+      >
+        <div className="preview-modal-content">
+          <div className="preview-header-modal">
+            <p>
+              {etiquetasParaImprimir.length} etiqueta(s) lista(s) para exportar
+            </p>
+            <button
+              className="btn btn-success btn-modal"
+              onClick={handleExportPDF}
+            >
+              <FontAwesomeIcon icon={faFilePdf} /> Descargar PDF
+            </button>
+          </div>
+
+          <div className="modal-print-area">
+            {/* NO USAMOS GRID AQUÍ. Cada etiqueta debe ser capturada de forma independiente. */}
+            <div className="etiquetas-container-preview">
+              {etiquetasParaImprimir.map((etiqueta, index) => (
+                // 1. Clase CLAVE para la nueva función de exportar
+                <div
+                  key={index}
+                  className="etiqueta-imprimible etiqueta-4x6-preview"
+                  // 2. Estilo de una sola columna para que se capturen individualmente
+                  style={{ marginBottom: "5px" }}
+                >
+                  {/* Este es el contenido de TU etiqueta */}
+                  {/*
+                    <p className="text-sm font-bold text-black break-words">
+                      {etiqueta.nombre_producto}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {formatAtributos(etiqueta.atributos)}
+                    </p>
+                 */}
+                  <p className="text-lg font-extrabold text-black my-1">
+                    $
+                    {parseFloat(etiqueta.precio).toLocaleString("es-MX", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                  <div className="w-full max-h-12 mt-0">
+                    <Barcode
+                      value={etiqueta.sku}
+                      height={40}
+                      fontSize={12}
+                      margin={2}
+                      width={1.5}
+                      displayValue={true}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </BasicModal>
     </div>
   );
-}
+};
+
+export default CodigosBarra;
