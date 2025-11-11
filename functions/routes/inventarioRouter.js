@@ -542,4 +542,181 @@ router.put("/tiendas/:storeId/variantes/:variantId", async (req, res) => {
   }
 });
 
+/**
+ * GET /inventario/distribucion/:variantId
+ * Obtener distribución de una variante por tiendas
+ */
+router.get("/distribucion/:variantId", async (req, res) => {
+  try {
+    const { variantId } = req.params;
+
+    // Obtener el documento agregado de la variante
+    const aggSnap = await invAggCol.doc(variantId).get();
+
+    if (!aggSnap.exists) {
+      return res.status(404).json({
+        success: false,
+        message: "Variante no encontrada en inventario",
+      });
+    }
+
+    const aggData = aggSnap.data();
+    const storesMap = aggData.stores || {};
+
+    // Obtener nombres de tiendas
+    const storeIds = Object.keys(storesMap);
+    const distribucion = [];
+
+    for (const storeId of storeIds) {
+      const storeSnap = await storesCol.doc(storeId).get();
+      const storeData = storeSnap.exists ? storeSnap.data() : {};
+      const storeName = storeData.nombre || "Tienda sin nombre";
+
+      const storeInfo = storesMap[storeId];
+
+      distribucion.push({
+        tienda_id: storeId,
+        tienda_nombre: storeName,
+        stock: storeInfo.stock || 0,
+        stock_minimo: storeInfo.min || 0,
+        ultima_actualizacion: storeInfo.updatedAt || null,
+      });
+    }
+
+    // Ordenar por stock descendente
+    distribucion.sort((a, b) => b.stock - a.stock);
+
+    res.json({
+      success: true,
+      data: distribucion,
+      variante: {
+        id: variantId,
+        sku: aggData.sku,
+        productName: aggData.productName,
+        totalStock: aggData.totalStock || 0,
+      },
+    });
+  } catch (e) {
+    console.error("❌ Error al obtener distribución:", e);
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * POST /inventario/crear
+ * Crear inventario inicial para una variante en una tienda
+ */
+router.post("/crear", async (req, res) => {
+  try {
+    const { tienda_id, variante_id, stock_inicial, stock_minimo, motivo } =
+      req.body;
+
+    // Validaciones
+    if (!tienda_id || !variante_id) {
+      return res.status(400).json({
+        success: false,
+        message: "tienda_id y variante_id son requeridos",
+      });
+    }
+
+    if (stock_inicial == null || stock_inicial < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "stock_inicial debe ser mayor o igual a 0",
+      });
+    }
+
+    // Verificar que la tienda existe
+    const storeSnap = await storesCol.doc(tienda_id).get();
+    if (!storeSnap.exists) {
+      return res.status(404).json({
+        success: false,
+        message: "Tienda no encontrada",
+      });
+    }
+
+    // Verificar que la variante existe en algún producto
+    const productsSnap = await productsCol.get();
+    let foundProduct = null;
+    let foundVariant = null;
+
+    for (const doc of productsSnap.docs) {
+      const prod = doc.data();
+      const variant = (prod.variantes || []).find((v) => v.id === variante_id);
+      if (variant) {
+        foundProduct = { id: doc.id, ...prod };
+        foundVariant = variant;
+        break;
+      }
+    }
+
+    if (!foundProduct || !foundVariant) {
+      return res.status(404).json({
+        success: false,
+        message: "Variante no encontrada",
+      });
+    }
+
+    // Verificar si ya existe inventario para esta variante en esta tienda
+    const existingIdx = await invIdxCol
+      .doc(`${variante_id}_${tienda_id}`)
+      .get();
+    if (existingIdx.exists) {
+      return res.status(400).json({
+        success: false,
+        message: "Ya existe inventario para esta variante en esta tienda",
+      });
+    }
+
+    // Crear inventario en transacción
+    await db.runTransaction(async (tx) => {
+      const now = new Date();
+
+      // Actualizar índices de inventario
+      upsertInventoryIndicesTx(tx, {
+        storeId: tienda_id,
+        productId: foundProduct.id,
+        prod: foundProduct,
+        variant: foundVariant,
+        oldStock: 0,
+        newStock: stock_inicial,
+        newMin: stock_minimo || 0,
+      });
+
+      // Registrar log de creación
+      if (stock_inicial > 0) {
+        addStoreLogTx(tx, {
+          storeId: tienda_id,
+          payload: {
+            type: "entrada",
+            variantId: variante_id,
+            productId: foundProduct.id,
+            quantity: stock_inicial,
+            reason: motivo || "Inventario inicial",
+            userId: req.user?.uid || "system",
+            userName: req.user?.email || "Sistema",
+            timestamp: now,
+            oldStock: 0,
+            newStock: stock_inicial,
+          },
+        });
+      }
+    });
+
+    res.json({
+      success: true,
+      message: "Inventario creado exitosamente",
+      data: {
+        tienda_id,
+        variante_id,
+        stock: stock_inicial,
+        stock_minimo: stock_minimo || 0,
+      },
+    });
+  } catch (e) {
+    console.error("❌ Error al crear inventario:", e);
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 export default router;

@@ -20,6 +20,8 @@ import supUsuariosRouter from "./routes_copy/usuariosRouter.js";
 import supEmpleadoRouter from "./routes_copy/empleadoRouter.js";
 import supProductoRouter from "./routes_copy/productoRouter.js";
 import supVariantesRouter from "./routes_copy/variantesRouter.js";
+import supVentasRouter from "./routes_copy/ventasRouter.js";
+import supInventarioRouter from "./routes_copy/inventarioRouter.js";
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -41,6 +43,8 @@ app.use("/supabase/usuarios", supUsuariosRouter);
 app.use("/supabase/empleados", supEmpleadoRouter);
 app.use("/supabase/productos", supProductoRouter);
 app.use("/supabase/variantes", supVariantesRouter);
+app.use("/supabase/ventas", supVentasRouter);
+app.use("/supabase/inventario", supInventarioRouter);
 
 // Montar la API
 

@@ -2,6 +2,7 @@ import Ajustes from "../pages/Ajustes/Ajustes";
 import CodigosBarra from "../pages/CodigosBarra/CodigosBarra";
 import Empleados from "../pages/Empleados/Empleados";
 import Home from "../pages/Home/Home";
+import InventarioGlobal from "../pages/Inventario/Inventario";
 import ProductosScreen from "../pages/Productos/Productos";
 import RegistroProducto from "../pages/Productos/RegistrarProductos";
 import Inventario from "../pages/Tiendas/Inventario/Inventario";
@@ -9,6 +10,7 @@ import InventarioTest from "../pages/Tiendas/Inventario/Inventario.Test";
 import TiendasScreen from "../pages/Tiendas/Tiendas";
 import RegistroUsuario from "../pages/Usuarios/Registro.Usuario";
 import Usuarios from "../pages/Usuarios/Usuarios";
+import Ventas from "../pages/Ventas/Ventas";
 
 // ✅ Roles en minúscula para coincidir con la base de datos
 const configRouting = [
@@ -36,6 +38,11 @@ const configRouting = [
     path: "/tiendas",
     page: TiendasScreen,
     roles: ["admin"],
+  },
+  {
+    path: "/inventario",
+    page: InventarioGlobal,
+    roles: ["admin", "manager"],
   },
   {
     path: "/tiendas/:tiendaId/inventario",
@@ -66,6 +73,11 @@ const configRouting = [
     path: "/codigos-barra",
     page: CodigosBarra,
     roles: ["admin", "manager"],
+  },
+  {
+    path: "/ventas",
+    page: Ventas,
+    roles: ["admin", "manager", "cajero"],
   },
 ];
 
