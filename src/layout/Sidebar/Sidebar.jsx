@@ -1,5 +1,5 @@
 // src/components/Sidebar/Sidebar.jsx
-import React, { useContext, useState } from "react";
+import React, { useContext } from "react";
 import "./sidebar.scss";
 import {
   faBars,
@@ -16,22 +16,20 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { NavLink, useNavigate } from "react-router-dom";
-import { logout } from "../../services/authService"; // <-- importamos el nuevo logout()
 import { toast } from "react-toastify";
 import { AuthContext } from "../../utils/context";
 
-const Sidebar = () => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   const navigate = useNavigate();
-  const { user } = useContext(AuthContext);
+  const { user, logout } = useContext(AuthContext); // ✅ Usar logout del contexto
 
   const toggleSidebar = () => {
     setIsCollapsed((prev) => !prev);
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     try {
-      await logout();
+      logout(); // ✅ Esta función actualiza el estado de React
       toast.success("Sesión cerrada");
       navigate("/login");
     } catch (err) {

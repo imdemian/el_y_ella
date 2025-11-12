@@ -16,14 +16,21 @@ body {
 
 /* Sidebar: ancho fijo, fondo oscuro */
 .sidebar {
-  width: 250px; /* Ajusta el ancho según tu necesidad */
+  width: 280px; /* Ancho fijo del sidebar */
   color: #fff;
 }
 
 /* Zona de contenido: se expande para ocupar el resto del espacio */
 .content-wrapper {
   flex: 1;
+  margin-left: 280px; /* Compensa el ancho del sidebar fijo */
   padding: 20px;
   background-color: #ffffff; /* Fondo blanco para el contenido */
   overflow-y: auto; /* Scroll vertical si el contenido es grande */
+  min-height: 100vh;
+  transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  &.sidebar-collapsed {
+    margin-left: 80px; /* Ancho del sidebar colapsado */
+  }
 }
