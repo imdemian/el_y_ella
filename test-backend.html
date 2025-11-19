@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test Backend Connection</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 50px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .test-container {
+        background: white;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .status {
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 5px;
+        font-weight: bold;
+      }
+      .success {
+        background: #d4edda;
+        color: #155724;
+      }
+      .error {
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .warning {
+        background: #fff3cd;
+        color: #856404;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      pre {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="test-container">
+      <h1>🔧 Test Backend de Ajustes</h1>
+
+      <div id="token-status"></div>
+
+      <div style="margin: 20px 0">
+        <button onclick="testComisiones()">Test Comisiones</button>
+        <button onclick="testDescuentos()">Test Descuentos</button>
+        <button onclick="testCodigos()">Test Códigos de Acceso</button>
+      </div>
+
+      <div id="results"></div>
+    </div>
+
+    <script>
+      const API_URL = "http://localhost:3001/supabase";
+
+      // Verificar token al cargar
+      window.onload = function () {
+        const token = localStorage.getItem("auth_token");
+        const tokenStatus = document.getElementById("token-status");
+
+        if (!token) {
+          tokenStatus.innerHTML =
+            '<div class="status error">⚠️ No hay token de autenticación en localStorage. Por favor inicia sesión primero.</div>';
+        } else {
+          tokenStatus.innerHTML =
+            '<div class="status success">✓ Token encontrado en localStorage</div>';
+        }
+      };
+
+      function getAuthHeaders() {
+        const token = localStorage.getItem("auth_token");
+        return {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        };
+      }
+
+      async function testComisiones() {
+        const results = document.getElementById("results");
+        results.innerHTML = "<p>🔄 Testeando comisiones...</p>";
+
+        try {
+          const response = await fetch(`${API_URL}/comisiones`, {
+            headers: getAuthHeaders(),
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            results.innerHTML = `
+                        <div class="status success">
+                            ✓ Comisiones cargadas exitosamente
+                        </div>
+                        <h3>Datos recibidos:</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+          } else {
+            results.innerHTML = `
+                        <div class="status error">
+                            ✗ Error al cargar comisiones<br>
+                            Status: ${response.status}<br>
+                            Mensaje: ${data.message || JSON.stringify(data)}
+                        </div>
+                    `;
+          }
+        } catch (error) {
+          results.innerHTML = `
+                    <div class="status error">
+                        ✗ Error de conexión<br>
+                        ${error.message}<br><br>
+                        <strong>¿El backend está corriendo en localhost:3001?</strong>
+                    </div>
+                `;
+        }
+      }
+
+      async function testDescuentos() {
+        const results = document.getElementById("results");
+        results.innerHTML = "<p>🔄 Testeando descuentos...</p>";
+
+        try {
+          const response = await fetch(`${API_URL}/descuentos`, {
+            headers: getAuthHeaders(),
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            results.innerHTML = `
+                        <div class="status success">
+                            ✓ Descuentos cargados exitosamente
+                        </div>
+                        <h3>Datos recibidos:</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+          } else {
+            results.innerHTML = `
+                        <div class="status error">
+                            ✗ Error al cargar descuentos<br>
+                            Status: ${response.status}<br>
+                            Mensaje: ${data.message || JSON.stringify(data)}
+                        </div>
+                    `;
+          }
+        } catch (error) {
+          results.innerHTML = `
+                    <div class="status error">
+                        ✗ Error de conexión<br>
+                        ${error.message}<br><br>
+                        <strong>¿El backend está corriendo en localhost:3001?</strong>
+                    </div>
+                `;
+        }
+      }
+
+      async function testCodigos() {
+        const results = document.getElementById("results");
+        results.innerHTML = "<p>🔄 Testeando códigos de acceso...</p>";
+
+        try {
+          const response = await fetch(`${API_URL}/codigos-acceso`, {
+            headers: getAuthHeaders(),
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            results.innerHTML = `
+                        <div class="status success">
+                            ✓ Códigos de acceso cargados exitosamente
+                        </div>
+                        <h3>Datos recibidos:</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+          } else {
+            results.innerHTML = `
+                        <div class="status error">
+                            ✗ Error al cargar códigos de acceso<br>
+                            Status: ${response.status}<br>
+                            Mensaje: ${data.message || JSON.stringify(data)}
+                        </div>
+                    `;
+          }
+        } catch (error) {
+          results.innerHTML = `
+                    <div class="status error">
+                        ✗ Error de conexión<br>
+                        ${error.message}<br><br>
+                        <strong>¿El backend está corriendo en localhost:3001?</strong>
+                    </div>
+                `;
+        }
+      }
+    </script>
+  </body>
+</html>
