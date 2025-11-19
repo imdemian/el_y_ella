@@ -1,8 +1,8 @@
 // import { useContext } from "react";
 import { useState } from "react";
-import Sidebar from "./sidebar/sidebar";
 import { AuthContext } from "../utils/context";
 import "./Layout.scss";
+import Sidebar from "./Sidebar/Sidebar";
 
 // Añadir setRefreshCheckLogin después
 const Layout = ({ children }) => {
@@ -18,7 +18,7 @@ const Layout = ({ children }) => {
           setIsCollapsed={setIsSidebarCollapsed}
         />
         <div
-          className={`content-wrapper bg-white ${
+          className={`content-wrapper ${
             isSidebarCollapsed ? "sidebar-collapsed" : ""
           }`}
         >

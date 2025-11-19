@@ -6,6 +6,7 @@ import {
   faBoxesStacked,
   faChildDress,
   faCog,
+  faHistory,
   faHome,
   faMoneyBill1,
   faShop,
@@ -48,6 +49,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
     admin: [
       "Inicio",
       "Ventas",
+      "Historial",
       "Etiquetas",
       "Productos",
       "Inventario",
@@ -65,6 +67,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   const menuItems = [
     { title: "Inicio", route: "/home", icon: faHome },
     { title: "Ventas", route: "/ventas", icon: faMoneyBill1 },
+    { title: "Historial", route: "/historial", icon: faHistory },
     { title: "Etiquetas", route: "/codigos-barra", icon: faTag },
     { title: "Productos", route: "/productos", icon: faBoxesStacked },
     { title: "Inventario", route: "/inventario", icon: faWarehouse },
