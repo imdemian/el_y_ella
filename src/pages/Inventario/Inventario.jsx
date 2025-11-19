@@ -204,8 +204,6 @@ export default function Inventario() {
   };
 
   const abrirModalDistribucion = (item) => {
-    console.log("🏢 Abriendo modal de distribución con item:", item);
-    console.log("🔑 variante_id:", item.variante_id);
     setContentModal(<DistribucionModal item={item} />);
     setModalTitle("Distribución por Tiendas");
     setModalSize("lg");

@@ -17,14 +17,9 @@ const DistribucionModal = ({ item }) => {
     const cargarDistribucion = async () => {
       setLoading(true);
       try {
-        console.log(
-          "🔍 Buscando distribución para variante_id:",
-          item.variante_id
-        );
         const response = await InventarioService.obtenerDistribucionVariante(
           item.variante_id
         );
-        console.log("📦 Respuesta de distribución:", response);
 
         // La respuesta tiene data (array de tiendas) y variante (info global)
         setDistribucion(response.data || []);
@@ -36,7 +31,7 @@ const DistribucionModal = ({ item }) => {
           );
         }
       } catch (error) {
-        console.error("❌ Error al cargar distribución:", error);
+        console.error("Error al cargar distribución:", error);
         toast.error("Error al cargar la distribución del producto");
         setDistribucion([]);
         setVarianteInfo(null);
@@ -148,7 +143,6 @@ const DistribucionModal = ({ item }) => {
                         <span className="porcentaje-text">{porcentaje}%</span>
                       </div>
                     </td>
-                    <td>{d.stock_minimo || 0}</td>
                     <td>
                       {isOutOfStock ? (
                         <span className="badge badge-danger">Sin stock</span>
