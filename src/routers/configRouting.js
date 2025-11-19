@@ -1,6 +1,7 @@
 import Ajustes from "../pages/Ajustes/Ajustes";
 import CodigosBarra from "../pages/CodigosBarra/CodigosBarra";
 import Empleados from "../pages/Empleados/Empleados";
+import Historial from "../pages/Historial/Historial";
 import Home from "../pages/Home/Home";
 import InventarioGlobal from "../pages/Inventario/Inventario";
 import ProductosScreen from "../pages/Productos/Productos";
@@ -78,6 +79,11 @@ const configRouting = [
     path: "/ventas",
     page: Ventas,
     roles: ["admin", "manager", "cajero"],
+  },
+  {
+    path: "/historial",
+    page: Historial,
+    roles: ["admin"],
   },
 ];
 

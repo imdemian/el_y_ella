@@ -22,6 +22,9 @@ import supProductoRouter from "./routes_copy/productoRouter.js";
 import supVariantesRouter from "./routes_copy/variantesRouter.js";
 import supVentasRouter from "./routes_copy/ventasRouter.js";
 import supInventarioRouter from "./routes_copy/inventarioRouter.js";
+import supComisionesRouter from "./routes_copy/comisionesRouter.js";
+import supDescuentosRouter from "./routes_copy/descuentosRouter.js";
+import supCodigosAccesoRouter from "./routes_copy/codigosAccesoRouter.js";
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -45,6 +48,9 @@ app.use("/supabase/productos", supProductoRouter);
 app.use("/supabase/variantes", supVariantesRouter);
 app.use("/supabase/ventas", supVentasRouter);
 app.use("/supabase/inventario", supInventarioRouter);
+app.use("/supabase/comisiones", supComisionesRouter);
+app.use("/supabase/descuentos", supDescuentosRouter);
+app.use("/supabase/codigos-acceso", supCodigosAccesoRouter);
 
 // Montar la API
 

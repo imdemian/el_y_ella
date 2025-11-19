@@ -825,7 +825,7 @@ router.get("/distribucion/:variante_id", async (req, res) => {
         variante_id,
         tienda_id,
         cantidad_disponible,
-        minimo_stock,
+        cantidad_reservada,
         updated_at,
         tiendas (id, nombre)
       `
@@ -845,14 +845,14 @@ router.get("/distribucion/:variante_id", async (req, res) => {
       });
     }
 
-    // Obtener info adicional de la variante desde inventario global (incluye inventario_minimo)
+    // Obtener info adicional de la variante desde inventario global (incluye minimo_stock)
     const { data: varianteInfo } = await supabase
       .from("inventario_global")
       .select(
         `
         variante_id,
         cantidad_disponible,
-        inventario_minimo,
+        minimo_stock,
         variantes_producto (sku, productos (nombre))
       `
       )
@@ -870,7 +870,7 @@ router.get("/distribucion/:variante_id", async (req, res) => {
     // Ordenar por stock descendente
     distribucion.sort((a, b) => b.stock - a.stock);
 
-    res.json({
+    const response = {
       success: true,
       data: distribucion,
       variante: varianteInfo
@@ -880,10 +880,12 @@ router.get("/distribucion/:variante_id", async (req, res) => {
             productName:
               varianteInfo.variantes_producto?.productos?.nombre || "N/A",
             totalStock: varianteInfo.cantidad_disponible || 0,
-            inventario_minimo: varianteInfo.inventario_minimo || 0,
+            inventario_minimo: varianteInfo.minimo_stock || 0,
           }
         : null,
-    });
+    };
+
+    res.json(response);
   } catch (error) {
     console.error("Error en GET /inventario/distribucion:", error);
     res.status(500).json({ error: error.message });
