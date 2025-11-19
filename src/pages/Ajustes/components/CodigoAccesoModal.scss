@@ -1,0 +1,261 @@
+// src/pages/Ajustes/components/CodigoAccesoModal.scss
+.codigo-acceso-modal {
+  padding: 0;
+
+  form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+
+    label {
+      font-weight: 600;
+      color: #2c3e50;
+      font-size: 0.95rem;
+
+      .required {
+        color: #e74c3c;
+        margin-left: 0.25rem;
+      }
+    }
+
+    input,
+    textarea,
+    select {
+      padding: 0.75rem;
+      border: 1.5px solid #e0e6ed;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      transition: all 0.3s ease;
+      font-family: inherit;
+
+      &:focus {
+        outline: none;
+        border-color: #9b7fa8;
+        box-shadow: 0 0 0 3px rgba(155, 127, 168, 0.1);
+      }
+    }
+
+    small {
+      color: #6c757d;
+      font-size: 0.85rem;
+    }
+  }
+
+  .input-with-button {
+    display: flex;
+    gap: 0.5rem;
+
+    input {
+      flex: 1;
+    }
+
+    .btn-generate {
+      padding: 0.75rem 1rem;
+      border: 1.5px solid #e0e6ed;
+      border-radius: 8px;
+      background: white;
+      cursor: pointer;
+      font-size: 1.2rem;
+      transition: all 0.3s ease;
+
+      &:hover {
+        background: #f8f9fa;
+        border-color: #9b7fa8;
+      }
+    }
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+
+    @media (max-width: 768px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .checkbox-group {
+    label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+
+      input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: #9b7fa8;
+      }
+    }
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    padding-top: 1rem;
+    border-top: 1.5px solid #e9ecef;
+    margin-top: 0.5rem;
+
+    button {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+
+      &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      &.btn-cancel {
+        background-color: #f8f9fa;
+        color: #495057;
+
+        &:hover:not(:disabled) {
+          background-color: #e9ecef;
+        }
+      }
+
+      &.btn-save {
+        background: linear-gradient(135deg, #9b7fa8 0%, #7a5d88 100%);
+        color: white;
+
+        &:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(155, 127, 168, 0.3);
+        }
+      }
+    }
+  }
+}
+
+.codigo-generado-success {
+  padding: 2rem;
+  text-align: center;
+
+  .success-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    animation: bounceIn 0.6s ease;
+  }
+
+  h3 {
+    color: #27ae60;
+    margin-bottom: 1.5rem;
+    font-size: 1.5rem;
+  }
+
+  .codigo-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin: 2rem 0;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border: 2px dashed #9b7fa8;
+    border-radius: 12px;
+
+    code {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #9b7fa8;
+      font-family: "Courier New", monospace;
+      letter-spacing: 2px;
+    }
+
+    .btn-copy {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 6px;
+      background: #9b7fa8;
+      color: white;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.3s ease;
+
+      &:hover {
+        background: #7a5d88;
+        transform: translateY(-2px);
+      }
+    }
+  }
+
+  .warning-text {
+    color: #e67e22;
+    font-weight: 500;
+    margin: 1rem 0;
+    padding: 0.75rem;
+    background: #fff3e0;
+    border-radius: 8px;
+  }
+
+  .codigo-info {
+    text-align: left;
+    background: white;
+    border: 1px solid #e0e6ed;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1.5rem 0;
+
+    .info-item {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #f1f3f5;
+
+      &:last-child {
+        border-bottom: none;
+      }
+
+      strong {
+        color: #495057;
+        margin-right: 0.5rem;
+      }
+    }
+  }
+
+  .btn-close-success {
+    margin-top: 1.5rem;
+    padding: 0.75rem 2rem;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #9b7fa8 0%, #7a5d88 100%);
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(155, 127, 168, 0.3);
+    }
+  }
+}
+
+@keyframes bounceIn {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

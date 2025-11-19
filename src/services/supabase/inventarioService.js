@@ -288,24 +288,18 @@ export class InventarioService {
    * Retorna: { data: [...tiendas], variante: {...info_global} }
    */
   static async obtenerDistribucionVariante(varianteId) {
-    console.log(`📡 Llamando GET ${API_URL}/distribucion/${varianteId}`);
     const response = await fetch(`${API_URL}/distribucion/${varianteId}`, {
       method: "GET",
       headers: this._getAuthHeaders(),
     });
 
-    console.log(
-      `📥 Response status: ${response.status} ${response.statusText}`
-    );
-
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("❌ Error response:", errorText);
+      console.error("Error al obtener distribución:", errorText);
       throw new Error(`Error al obtener distribución: ${response.statusText}`);
     }
 
     const result = await response.json();
-    console.log("✅ Datos recibidos:", result);
 
     // Retornar el objeto completo con data y variante
     return {
