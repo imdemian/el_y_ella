@@ -1,31 +1,44 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faShoppingCart,
-  faTrash,
   faPlus,
   faMinus,
-  faSearch,
   faCashRegister,
-  faReceipt,
   faBarcode,
-  faTimes,
 } from "@fortawesome/free-solid-svg-icons";
 import { VentaService } from "../../services/supabase/ventaService";
 import { VarianteService } from "../../services/supabase/varianteService";
-import BasicModal from "../../components/BasicModal/BasicModal";
+import { DescuentoService } from "../../services/supabase/descuentoService";
 import "./Ventas.scss";
 
 const Ventas = () => {
   const [carrito, setCarrito] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [resultadosBusqueda, setResultadosBusqueda] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [metodoPago, setMetodoPago] = useState("efectivo");
   const [montoPagado, setMontoPagado] = useState("");
   const [procesandoVenta, setProcesandoVenta] = useState(false);
+  const [lastKeyTime, setLastKeyTime] = useState(Date.now());
+
+  // Estados para el cliente
+  const [tipoCliente, setTipoCliente] = useState("general"); // "general" o "registrado"
+  const [datosCliente, setDatosCliente] = useState({
+    nombre: "",
+    telefono: "",
+    email: "",
+  });
+
+  // Estados para tienda
+  const [tiendas, setTiendas] = useState([]);
+  const [tiendaSeleccionada, setTiendaSeleccionada] = useState("");
+  const [usuarioTieneTienda, setUsuarioTieneTienda] = useState(false);
+
+  // Estados para descuento
+  const [codigoDescuento, setCodigoDescuento] = useState("");
+  const [descuentoAplicado, setDescuentoAplicado] = useState(null);
+  const [validandoDescuento, setValidandoDescuento] = useState(false);
 
   const searchInputRef = useRef(null);
 
@@ -35,41 +48,215 @@ const Ventas = () => {
     if (searchInputRef.current) {
       searchInputRef.current.focus();
     }
+
+    // Cargar tiendas y verificar usuario
+    cargarTiendasYUsuario();
   }, []);
 
-  // Buscar variantes
-  const handleBuscar = async (termino) => {
-    console.log("🔍 [DEBUG] handleBuscar llamado con:", termino);
-
-    if (!termino.trim()) {
-      setResultadosBusqueda([]);
-      return;
-    }
-
-    setLoading(true);
+  // Cargar tiendas disponibles y verificar si el usuario tiene tienda asignada
+  const cargarTiendasYUsuario = async () => {
     try {
-      console.log("🔍 [DEBUG] Llamando a VentaService.buscarVariantes...");
-      const variantes = await VentaService.buscarVariantes(termino);
-      console.log("✅ [DEBUG] Variantes encontradas:", variantes);
-      setResultadosBusqueda(variantes);
-    } catch (error) {
-      console.error("❌ [DEBUG] Error en buscarVariantes:", error);
-      // Si el error indica que no hay inventario, mostrar mensaje específico
-      if (error.message.includes("No hay inventario disponible")) {
-        toast.warning(
-          "No hay inventario disponible de ese producto en esta tienda"
-        );
-        setResultadosBusqueda([]);
-      } else if (error.requiere_tienda) {
-        toast.warning("Por favor selecciona una tienda");
+      // Obtener datos del usuario del localStorage
+      const userData = JSON.parse(localStorage.getItem("user") || "{}");
+      const tiendaUsuario = userData.tienda_id;
+
+      // Importar TiendaService
+      const { TiendaService } = await import(
+        "../../services/supabase/tiendaService"
+      );
+      const listaTiendas = await TiendaService.obtenerTiendas();
+
+      setTiendas(listaTiendas);
+
+      if (tiendaUsuario) {
+        // Usuario tiene tienda asignada
+        setUsuarioTieneTienda(true);
+        setTiendaSeleccionada(tiendaUsuario);
       } else {
-        toast.error(error.message);
+        // Usuario NO tiene tienda, debe seleccionar una
+        setUsuarioTieneTienda(false);
+        if (listaTiendas.length > 0) {
+          setTiendaSeleccionada(listaTiendas[0].id);
+        }
       }
-      setResultadosBusqueda([]);
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      console.error("Error al cargar tiendas:", error);
+      toast.error("Error al cargar las tiendas");
     }
   };
+
+  // Agregar producto al carrito
+  const agregarAlCarrito = useCallback((variante) => {
+    setCarrito((prevCarrito) => {
+      const itemExistente = prevCarrito.find((item) => item.id === variante.id);
+
+      if (itemExistente) {
+        if (itemExistente.cantidad >= variante.stock_actual) {
+          toast.warning("No hay suficiente stock disponible");
+          return prevCarrito;
+        }
+        return prevCarrito.map((item) =>
+          item.id === variante.id
+            ? { ...item, cantidad: item.cantidad + 1 }
+            : item
+        );
+      } else {
+        return [
+          ...prevCarrito,
+          {
+            id: variante.id,
+            sku: variante.sku,
+            nombre: variante.nombre_producto,
+            atributos: variante.atributos,
+            precio: variante.precio,
+            cantidad: 1,
+            stock_disponible: variante.stock_actual,
+          },
+        ];
+      }
+    });
+
+    setBusqueda("");
+    setResultadosBusqueda([]);
+
+    // Volver a enfocar el input de búsqueda
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, []);
+
+  // Buscar y agregar automáticamente al carrito
+  const buscarYAgregarAutomaticamente = useCallback(
+    async (codigo) => {
+      try {
+        console.log("🔍 Buscando código:", codigo);
+        const variantes = await VentaService.buscarVariantes(codigo);
+
+        if (variantes.length === 1) {
+          // Si solo hay un resultado, agregarlo automáticamente
+          agregarAlCarrito(variantes[0]);
+          toast.success(`Producto agregado: ${variantes[0].nombre_producto}`);
+        } else if (variantes.length > 1) {
+          // Si hay múltiples resultados, agregar el primero automáticamente y mostrar los demás
+          agregarAlCarrito(variantes[0]);
+          setBusqueda(codigo);
+          setResultadosBusqueda(variantes);
+          toast.success(
+            `Producto agregado: ${variantes[0].nombre_producto}. Se encontraron ${variantes.length} productos`
+          );
+        } else {
+          toast.warning("Producto no encontrado");
+        }
+      } catch (error) {
+        console.error("Error al buscar:", error);
+        toast.error("Error al buscar el producto");
+      }
+    },
+    [agregarAlCarrito]
+  );
+
+  // Detector de escaneo de código de barras
+  useEffect(() => {
+    let buffer = "";
+    let timeout;
+
+    const handleKeyPress = (e) => {
+      const currentTime = Date.now();
+
+      // Si han pasado más de 100ms desde la última tecla, reiniciar buffer
+      if (currentTime - lastKeyTime > 100) {
+        buffer = "";
+      }
+
+      setLastKeyTime(currentTime);
+
+      // Solo capturar si no estamos en un input
+      if (document.activeElement?.tagName === "INPUT") {
+        return;
+      }
+
+      // Capturar teclas alfanuméricas y guiones
+      if (e.key.length === 1 || e.key === "-") {
+        buffer += e.key;
+
+        // Limpiar timeout anterior
+        clearTimeout(timeout);
+
+        // Esperar 50ms después de la última tecla para procesar
+        timeout = setTimeout(() => {
+          if (buffer.length >= 3) {
+            console.log("📷 Código escaneado:", buffer);
+            buscarYAgregarAutomaticamente(buffer);
+          }
+          buffer = "";
+        }, 50);
+      }
+
+      // Si presionan Enter, buscar inmediatamente
+      if (e.key === "Enter" && buffer.length >= 3) {
+        clearTimeout(timeout);
+        console.log("📷 Código escaneado (Enter):", buffer);
+        buscarYAgregarAutomaticamente(buffer);
+        buffer = "";
+      }
+    };
+
+    window.addEventListener("keypress", handleKeyPress);
+
+    return () => {
+      window.removeEventListener("keypress", handleKeyPress);
+      clearTimeout(timeout);
+    };
+  }, [lastKeyTime, buscarYAgregarAutomaticamente]);
+
+  // Buscar variantes
+  const handleBuscar = useCallback(
+    async (termino) => {
+      console.log("🔍 [DEBUG] handleBuscar llamado con:", termino);
+
+      if (!termino.trim()) {
+        setResultadosBusqueda([]);
+        return;
+      }
+
+      try {
+        console.log("🔍 [DEBUG] Llamando a VentaService.buscarVariantes...");
+        const variantes = await VentaService.buscarVariantes(termino);
+        console.log("✅ [DEBUG] Variantes encontradas:", variantes);
+
+        // Si hay resultados, agregar automáticamente el primero
+        if (variantes.length > 0) {
+          agregarAlCarrito(variantes[0]);
+          toast.success(`Producto agregado: ${variantes[0].nombre_producto}`);
+
+          // Si hay más de 1, mostrar los demás también
+          if (variantes.length > 1) {
+            setResultadosBusqueda(variantes);
+            toast.info(`Se encontraron ${variantes.length} productos en total`);
+          } else {
+            setResultadosBusqueda([]);
+          }
+        } else {
+          setResultadosBusqueda([]);
+        }
+      } catch (error) {
+        console.error("❌ [DEBUG] Error en buscarVariantes:", error);
+        // Si el error indica que no hay inventario, mostrar mensaje específico
+        if (error.message.includes("No hay inventario disponible")) {
+          toast.warning(
+            "No hay inventario disponible de ese producto en esta tienda"
+          );
+          setResultadosBusqueda([]);
+        } else if (error.requiere_tienda) {
+          toast.warning("Por favor selecciona una tienda");
+        } else {
+          toast.error(error.message);
+        }
+        setResultadosBusqueda([]);
+      }
+    },
+    [agregarAlCarrito]
+  );
 
   // Debounce para la búsqueda
   useEffect(() => {
@@ -82,48 +269,7 @@ const Ventas = () => {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [busqueda]);
-
-  // Agregar producto al carrito
-  const agregarAlCarrito = (variante) => {
-    const itemExistente = carrito.find((item) => item.id === variante.id);
-
-    if (itemExistente) {
-      if (itemExistente.cantidad >= variante.stock_actual) {
-        toast.warning("No hay suficiente stock disponible");
-        return;
-      }
-      setCarrito(
-        carrito.map((item) =>
-          item.id === variante.id
-            ? { ...item, cantidad: item.cantidad + 1 }
-            : item
-        )
-      );
-    } else {
-      setCarrito([
-        ...carrito,
-        {
-          id: variante.id,
-          sku: variante.sku,
-          nombre: variante.nombre_producto,
-          atributos: variante.atributos,
-          precio: variante.precio,
-          cantidad: 1,
-          stock_disponible: variante.stock_actual,
-        },
-      ]);
-    }
-
-    toast.success("Producto agregado al carrito");
-    setBusqueda("");
-    setResultadosBusqueda([]);
-
-    // Volver a enfocar el input de búsqueda
-    if (searchInputRef.current) {
-      searchInputRef.current.focus();
-    }
-  };
+  }, [busqueda, handleBuscar]);
 
   // Actualizar cantidad en el carrito
   const actualizarCantidad = (id, nuevaCantidad) => {
@@ -150,12 +296,65 @@ const Ventas = () => {
   const eliminarDelCarrito = (id) => {
     setCarrito(carrito.filter((item) => item.id !== id));
     toast.info("Producto eliminado del carrito");
+    // Si había un descuento aplicado, revalidarlo
+    if (descuentoAplicado) {
+      setDescuentoAplicado(null);
+      setCodigoDescuento("");
+      toast.info("Descuento eliminado. Aplícalo nuevamente si es necesario");
+    }
   };
 
-  // Limpiar carrito
-  const limpiarCarrito = () => {
-    setCarrito([]);
-    toast.info("Carrito limpiado");
+  // Aplicar código de descuento
+  const aplicarDescuento = async () => {
+    if (!codigoDescuento.trim()) {
+      toast.warning("Ingresa un código de descuento");
+      return;
+    }
+
+    if (carrito.length === 0) {
+      toast.warning("Agrega productos antes de aplicar un descuento");
+      return;
+    }
+
+    setValidandoDescuento(true);
+
+    try {
+      const subtotal = calcularSubtotal();
+      const items = carrito.map((item) => ({
+        producto_id: item.producto_id,
+        cantidad: item.cantidad,
+        precio: item.precio,
+        producto: item.producto || {},
+      }));
+
+      const resultado = await DescuentoService.validarDescuento(
+        codigoDescuento,
+        subtotal,
+        items,
+        tipoCliente === "registrado" ? datosCliente : null
+      );
+
+      if (resultado.valido) {
+        setDescuentoAplicado(resultado);
+        toast.success(resultado.mensaje || "Descuento aplicado correctamente");
+      } else {
+        setDescuentoAplicado(null);
+        toast.error(resultado.mensaje || "Código de descuento no válido");
+      }
+    } catch (error) {
+      console.error("Error al validar descuento:", error);
+      toast.error("Error al validar el código de descuento");
+      setDescuentoAplicado(null);
+    } finally {
+      setValidandoDescuento(false);
+    }
+  };
+
+  // Eliminar descuento aplicado
+  const eliminarDescuento = () => {
+    setDescuentoAplicado(null);
+    setCodigoDescuento("");
+    toast.info("Descuento eliminado");
   };
 
   // Calcular totales
@@ -166,8 +365,13 @@ const Ventas = () => {
     );
   };
 
+  const calcularDescuento = () => {
+    if (!descuentoAplicado) return 0;
+    return descuentoAplicado.montoDescuento || 0;
+  };
+
   const calcularTotal = () => {
-    return calcularSubtotal(); // Aquí podrías agregar impuestos o descuentos
+    return calcularSubtotal() - calcularDescuento();
   };
 
   // Procesar venta
@@ -176,6 +380,26 @@ const Ventas = () => {
 
     if (carrito.length === 0) {
       toast.warning("El carrito está vacío");
+      return;
+    }
+
+    // Validar datos del cliente si es registrado
+    if (tipoCliente === "registrado") {
+      if (!datosCliente.nombre.trim()) {
+        toast.error("Por favor ingresa el nombre del cliente");
+        return;
+      }
+      if (!datosCliente.telefono.trim()) {
+        toast.error("Por favor ingresa el teléfono del cliente");
+        return;
+      }
+    }
+
+    // Validar que haya una tienda seleccionada
+    if (!tiendaSeleccionada) {
+      toast.error(
+        "Por favor selecciona una tienda para descontar el inventario"
+      );
       return;
     }
 
@@ -198,9 +422,24 @@ const Ventas = () => {
           subtotal: item.precio * item.cantidad,
         })),
         subtotal: calcularSubtotal(),
+        descuento: calcularDescuento(),
+        impuestos: 0,
         total: total,
-        metodo_pago: metodoPago,
-        monto_pagado: metodoPago === "efectivo" ? pago : total,
+        metodo_pago: { [metodoPago]: metodoPago === "efectivo" ? pago : total },
+        estado_venta: "completada",
+        tienda_id: tiendaSeleccionada, // Tienda para descontar inventario
+        // Información del descuento (si fue aplicado)
+        codigo_descuento_id: descuentoAplicado?.descuento?.id || null,
+        descuento_aplicado: calcularDescuento(),
+        // Información del cliente (solo si es registrado)
+        cliente_info:
+          tipoCliente === "registrado"
+            ? {
+                nombre: datosCliente.nombre,
+                telefono: datosCliente.telefono,
+                email: datosCliente.email || null,
+              }
+            : null, // null para cliente general
       };
 
       console.log("💰 [DEBUG] Datos de venta a enviar:", ventaData);
@@ -210,22 +449,30 @@ const Ventas = () => {
 
       console.log("✅ [DEBUG] Venta creada exitosamente:", resultado);
 
-      toast.success(`Venta #${resultado.id} completada exitosamente`);
-
-      // Limpiar todo
-      setCarrito([]);
-      setMontoPagado("");
-      setMetodoPago("efectivo");
-      setShowCheckoutModal(false);
+      toast.success(`✅ Venta #${resultado.id} completada exitosamente`);
 
       // Mostrar cambio si es efectivo
       if (metodoPago === "efectivo" && pago > total) {
         const cambio = pago - total;
         toast.info(
-          `Cambio: $${cambio.toLocaleString("es-MX", {
+          `💰 Cambio: $${cambio.toLocaleString("es-MX", {
             minimumFractionDigits: 2,
           })}`
         );
+      }
+
+      // Limpiar todo
+      setCarrito([]);
+      setMontoPagado("");
+      setMetodoPago("efectivo");
+      setTipoCliente("general");
+      setDatosCliente({ nombre: "", telefono: "", email: "" });
+      setCodigoDescuento("");
+      setDescuentoAplicado(null);
+
+      // Enfocar nuevamente el input para siguiente venta
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
       }
     } catch (error) {
       console.error("❌ [DEBUG] Error al procesar venta:", error);
@@ -246,144 +493,84 @@ const Ventas = () => {
   return (
     <div className="ventas-page">
       <div className="ventas-container">
-        {/* Panel izquierdo - Búsqueda y productos */}
-        <div className="panel-productos">
-          <div className="panel-header">
-            <h2>
-              <FontAwesomeIcon icon={faShoppingCart} /> Punto de Venta
-            </h2>
-          </div>
-
-          {/* Búsqueda por código de barras */}
-          <div className="search-section">
-            {/* Búsqueda por nombre */}
-            <div className="search-input-wrapper">
-              <FontAwesomeIcon icon={faSearch} className="search-icon" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Buscar por nombre o SKU..."
-                className="search-input"
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-              />
-              {busqueda && (
-                <button
-                  className="clear-search"
-                  onClick={() => {
-                    setBusqueda("");
-                    setResultadosBusqueda([]);
-                  }}
-                >
-                  <FontAwesomeIcon icon={faTimes} />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Resultados de búsqueda */}
-          {loading ? (
-            <div className="loading-results">
-              <div className="spinner"></div>
-              <p>Buscando productos...</p>
-            </div>
-          ) : resultadosBusqueda.length > 0 ? (
-            <div className="resultados-busqueda">
-              <p className="resultados-titulo">
-                {resultadosBusqueda.length} resultado(s) encontrado(s)
-              </p>
-              <div className="productos-grid">
-                {resultadosBusqueda.map((variante) => (
-                  <div
-                    key={variante.id}
-                    className="producto-card"
-                    onClick={() => agregarAlCarrito(variante)}
-                  >
-                    <div className="producto-info">
-                      <h4>{variante.nombre_producto}</h4>
-                      {variante.atributos && (
-                        <p className="atributos">
-                          {formatAtributos(variante.atributos)}
-                        </p>
-                      )}
-                      <p className="sku">SKU: {variante.sku}</p>
-                    </div>
-                    <div className="producto-detalles">
-                      <p className="precio">
-                        $
-                        {variante.precio.toLocaleString("es-MX", {
-                          minimumFractionDigits: 2,
-                        })}
-                      </p>
-                      <p
-                        className={`stock ${
-                          variante.stock_actual <= 5 ? "bajo" : ""
-                        }`}
-                      >
-                        Stock: {variante.stock_actual}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : busqueda ? (
-            <div className="no-resultados">
-              <FontAwesomeIcon icon={faSearch} size="3x" />
-              <p>No se encontraron productos</p>
-            </div>
-          ) : (
-            <div className="instrucciones">
-              <FontAwesomeIcon icon={faBarcode} size="3x" />
-              <h3>Escanea o busca productos</h3>
-              <p>
-                Utiliza el escáner de códigos de barras o busca productos por
-                nombre o SKU
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Panel derecho - Carrito */}
-        <div className="panel-carrito">
+        {/* Panel izquierdo - Carrito */}
+        <div className="panel-carrito-izquierdo">
           <div className="carrito-header">
             <h3>
               <FontAwesomeIcon icon={faShoppingCart} /> Carrito de Compra
             </h3>
-            {carrito.length > 0 && (
-              <button className="btn-limpiar" onClick={limpiarCarrito}>
-                <FontAwesomeIcon icon={faTrash} /> Limpiar
-              </button>
-            )}
+            <p className="carrito-subtitle">
+              Escanea productos o busca por SKU
+            </p>
           </div>
 
+          {/* Input de búsqueda rápida */}
+          <div className="busqueda-rapida">
+            <FontAwesomeIcon icon={faBarcode} className="barcode-icon" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Escanear código de barras o buscar SKU..."
+              className="input-busqueda-rapida"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
+          </div>
+
+          {/* Resultados de búsqueda rápida */}
+          {resultadosBusqueda.length > 0 && (
+            <div className="resultados-rapidos">
+              {resultadosBusqueda.map((variante) => (
+                <div
+                  key={variante.id}
+                  className="resultado-item"
+                  onClick={() => agregarAlCarrito(variante)}
+                >
+                  <span className="resultado-nombre">
+                    {variante.nombre_producto}
+                  </span>
+                  <span className="resultado-sku">{variante.sku}</span>
+                  <span className="resultado-precio">
+                    $
+                    {variante.precio.toLocaleString("es-MX", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Lista de items del carrito */}
           <div className="carrito-items">
             {carrito.length === 0 ? (
               <div className="carrito-vacio">
-                <FontAwesomeIcon icon={faShoppingCart} size="3x" />
-                <p>El carrito está vacío</p>
-                <span>Agrega productos para comenzar la venta</span>
+                <FontAwesomeIcon icon={faBarcode} size="3x" />
+                <p>Escanea productos para comenzar</p>
+                <span>El carrito está vacío</span>
               </div>
             ) : (
               carrito.map((item) => (
                 <div key={item.id} className="carrito-item">
-                  <div className="item-info">
-                    <h4>{item.nombre}</h4>
-                    {item.atributos && (
-                      <p className="item-atributos">
-                        {formatAtributos(item.atributos)}
-                      </p>
-                    )}
-                    <p className="item-precio">
+                  <div className="item-principal">
+                    <div className="item-info">
+                      <h4>{item.nombre}</h4>
+                      {item.atributos && (
+                        <p className="item-variante">
+                          {formatAtributos(item.atributos)}
+                        </p>
+                      )}
+                      <p className="item-sku">SKU: {item.sku}</p>
+                    </div>
+                    <div className="item-precio-unitario">
                       $
                       {item.precio.toLocaleString("es-MX", {
                         minimumFractionDigits: 2,
                       })}
-                    </p>
+                    </div>
                   </div>
-
                   <div className="item-controles">
-                    <div className="cantidad-control">
+                    <div className="item-cantidad-control">
                       <button
                         className="btn-cantidad"
                         onClick={() =>
@@ -392,19 +579,7 @@ const Ventas = () => {
                       >
                         <FontAwesomeIcon icon={faMinus} />
                       </button>
-                      <input
-                        type="number"
-                        min="1"
-                        max={item.stock_disponible}
-                        value={item.cantidad}
-                        onChange={(e) =>
-                          actualizarCantidad(
-                            item.id,
-                            parseInt(e.target.value) || 1
-                          )
-                        }
-                        className="input-cantidad"
-                      />
+                      <span className="cantidad-valor">{item.cantidad}</span>
                       <button
                         className="btn-cantidad"
                         onClick={() =>
@@ -414,168 +589,295 @@ const Ventas = () => {
                         <FontAwesomeIcon icon={faPlus} />
                       </button>
                     </div>
-
-                    <button
-                      className="btn-eliminar"
-                      onClick={() => eliminarDelCarrito(item.id)}
-                    >
-                      <FontAwesomeIcon icon={faTrash} />
-                    </button>
-                  </div>
-
-                  <div className="item-subtotal">
-                    $
-                    {(item.precio * item.cantidad).toLocaleString("es-MX", {
-                      minimumFractionDigits: 2,
-                    })}
+                    <div className="item-subtotal">
+                      $
+                      {(item.precio * item.cantidad).toLocaleString("es-MX", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </div>
                   </div>
                 </div>
               ))
             )}
           </div>
-
-          {carrito.length > 0 && (
-            <>
-              <div className="carrito-totales">
-                <div className="total-row">
-                  <span>Subtotal:</span>
-                  <span>
-                    $
-                    {calcularSubtotal().toLocaleString("es-MX", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-                <div className="total-row total-final">
-                  <span>Total:</span>
-                  <span>
-                    $
-                    {calcularTotal().toLocaleString("es-MX", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                className="btn-finalizar"
-                onClick={() => setShowCheckoutModal(true)}
-              >
-                <FontAwesomeIcon icon={faCashRegister} /> Finalizar Venta
-              </button>
-            </>
-          )}
         </div>
-      </div>
 
-      {/* Modal de checkout */}
-      <BasicModal
-        show={showCheckoutModal}
-        setShow={setShowCheckoutModal}
-        title={
-          <div className="modal-title-checkout">
-            <FontAwesomeIcon icon={faReceipt} />
-            <span>Finalizar Venta</span>
-          </div>
-        }
-      >
-        <div className="checkout-modal-content">
-          <div className="checkout-resumen">
-            <h3>Resumen de la Venta</h3>
-            <div className="resumen-items">
-              {carrito.map((item) => (
-                <div key={item.id} className="resumen-item">
-                  <span>
-                    {item.nombre} x{item.cantidad}
-                  </span>
-                  <span>
-                    $
-                    {(item.precio * item.cantidad).toLocaleString("es-MX", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="resumen-total">
-              <span>Total a Pagar:</span>
-              <span className="total-monto">
-                $
-                {calcularTotal().toLocaleString("es-MX", {
-                  minimumFractionDigits: 2,
-                })}
-              </span>
-            </div>
-          </div>
-
-          <div className="checkout-pago">
-            <div className="form-group">
-              <label>Método de Pago:</label>
+        {/* Panel derecho - Resumen y Pago */}
+        <div className="panel-pago-derecho">
+          {/* Información del cliente */}
+          <div className="seccion-cliente">
+            <h4>Cliente</h4>
+            <div className="cliente-selector">
               <select
-                value={metodoPago}
-                onChange={(e) => setMetodoPago(e.target.value)}
-                className="select-metodo"
+                className="select-cliente"
+                value={tipoCliente}
+                onChange={(e) => setTipoCliente(e.target.value)}
               >
-                <option value="efectivo">Efectivo</option>
-                <option value="tarjeta">Tarjeta</option>
-                <option value="transferencia">Transferencia</option>
+                <option value="general">Cliente General</option>
+                <option value="registrado">Cliente Registrado</option>
               </select>
             </div>
 
-            {metodoPago === "efectivo" && (
-              <div className="form-group">
-                <label>Monto Recibido:</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min={calcularTotal()}
-                  value={montoPagado}
-                  onChange={(e) => setMontoPagado(e.target.value)}
-                  placeholder="0.00"
-                  className="input-monto"
-                  autoFocus
-                />
-                {montoPagado && parseFloat(montoPagado) >= calcularTotal() && (
-                  <p className="cambio-info">
-                    Cambio: $
-                    {(parseFloat(montoPagado) - calcularTotal()).toLocaleString(
-                      "es-MX",
-                      { minimumFractionDigits: 2 }
-                    )}
-                  </p>
-                )}
+            {/* Inputs para cliente registrado */}
+            {tipoCliente === "registrado" && (
+              <div className="cliente-inputs">
+                <div className="input-group">
+                  <label>Nombre:</label>
+                  <input
+                    type="text"
+                    placeholder="Nombre completo"
+                    value={datosCliente.nombre}
+                    onChange={(e) =>
+                      setDatosCliente({
+                        ...datosCliente,
+                        nombre: e.target.value,
+                      })
+                    }
+                    className="input-cliente"
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Teléfono:</label>
+                  <input
+                    type="tel"
+                    placeholder="(000) 000-0000"
+                    value={datosCliente.telefono}
+                    onChange={(e) =>
+                      setDatosCliente({
+                        ...datosCliente,
+                        telefono: e.target.value,
+                      })
+                    }
+                    className="input-cliente"
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Email (opcional):</label>
+                  <input
+                    type="email"
+                    placeholder="correo@ejemplo.com"
+                    value={datosCliente.email}
+                    onChange={(e) =>
+                      setDatosCliente({
+                        ...datosCliente,
+                        email: e.target.value,
+                      })
+                    }
+                    className="input-cliente"
+                  />
+                </div>
               </div>
             )}
           </div>
 
-          <div className="checkout-actions">
-            <button
-              className="btn btn-secondary"
-              onClick={() => setShowCheckoutModal(false)}
-              disabled={procesandoVenta}
-            >
-              Cancelar
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={procesarVenta}
-              disabled={procesandoVenta}
-            >
-              {procesandoVenta ? (
-                <>
-                  <div className="spinner-small"></div>
-                  Procesando...
-                </>
-              ) : (
-                <>
-                  <FontAwesomeIcon icon={faCashRegister} />
-                  Confirmar Venta
-                </>
-              )}
-            </button>
-          </div>
+          {/* Resumen de la venta */}
+          {carrito.length > 0 && (
+            <>
+              {/* Código de descuento */}
+              <div className="seccion-descuento">
+                <h4>Código de Descuento</h4>
+                {!descuentoAplicado ? (
+                  <div className="descuento-input-group">
+                    <input
+                      type="text"
+                      placeholder="Ingresa código de descuento"
+                      value={codigoDescuento}
+                      onChange={(e) =>
+                        setCodigoDescuento(e.target.value.toUpperCase())
+                      }
+                      className="input-descuento"
+                      disabled={validandoDescuento}
+                    />
+                    <button
+                      className="btn-aplicar-descuento"
+                      onClick={aplicarDescuento}
+                      disabled={validandoDescuento || !codigoDescuento.trim()}
+                    >
+                      {validandoDescuento ? "Validando..." : "Aplicar"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="descuento-aplicado">
+                    <div className="descuento-info">
+                      <span className="descuento-icono">🎟️</span>
+                      <div className="descuento-detalle">
+                        <span className="descuento-codigo">
+                          {descuentoAplicado.descuento.codigo}
+                        </span>
+                        <span className="descuento-nombre">
+                          {descuentoAplicado.descuento.nombre}
+                        </span>
+                      </div>
+                      <span className="descuento-monto">
+                        -$
+                        {descuentoAplicado.montoDescuento.toLocaleString(
+                          "es-MX",
+                          {
+                            minimumFractionDigits: 2,
+                          }
+                        )}
+                      </span>
+                    </div>
+                    <button
+                      className="btn-eliminar-descuento"
+                      onClick={eliminarDescuento}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="seccion-resumen">
+                <h4>Resumen</h4>
+                <div className="resumen-detalle">
+                  <div className="resumen-row">
+                    <span>Subtotal</span>
+                    <span className="resumen-valor">
+                      $
+                      {calcularSubtotal().toLocaleString("es-MX", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  {descuentoAplicado && (
+                    <div className="resumen-row descuento">
+                      <span>Descuento</span>
+                      <span className="resumen-valor descuento-valor">
+                        -$
+                        {calcularDescuento().toLocaleString("es-MX", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </span>
+                    </div>
+                  )}
+                  <div className="resumen-row total">
+                    <span>Total</span>
+                    <span className="resumen-valor">
+                      $
+                      {calcularTotal().toLocaleString("es-MX", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Método de pago */}
+              <div className="seccion-pago">
+                <h4>Método de Pago</h4>
+                <div className="metodos-pago">
+                  <button
+                    className={`metodo-btn ${
+                      metodoPago === "efectivo" ? "active" : ""
+                    }`}
+                    onClick={() => setMetodoPago("efectivo")}
+                  >
+                    <span className="metodo-icono">💵</span>
+                    <span>Efectivo</span>
+                  </button>
+                  <button
+                    className={`metodo-btn ${
+                      metodoPago === "tarjeta" ? "active" : ""
+                    }`}
+                    onClick={() => setMetodoPago("tarjeta")}
+                  >
+                    <span className="metodo-icono">💳</span>
+                    <span>Tarjeta</span>
+                  </button>
+                  <button
+                    className={`metodo-btn ${
+                      metodoPago === "transferencia" ? "active" : ""
+                    }`}
+                    onClick={() => setMetodoPago("transferencia")}
+                  >
+                    <span className="metodo-icono">🏦</span>
+                    <span>Transferencia</span>
+                  </button>
+                </div>
+
+                {metodoPago === "efectivo" && (
+                  <div className="input-efectivo">
+                    <label>Monto Recibido:</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={calcularTotal()}
+                      value={montoPagado}
+                      onChange={(e) => setMontoPagado(e.target.value)}
+                      placeholder="0.00"
+                      className="input-monto"
+                    />
+                    {montoPagado &&
+                      parseFloat(montoPagado) >= calcularTotal() && (
+                        <p className="cambio-display">
+                          💰 Cambio: $
+                          {(
+                            parseFloat(montoPagado) - calcularTotal()
+                          ).toLocaleString("es-MX", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </p>
+                      )}
+                  </div>
+                )}
+
+                {/* Selector de tienda (solo si el usuario no tiene tienda asignada) */}
+                {!usuarioTieneTienda && tiendas.length > 0 && (
+                  <div className="selector-tienda">
+                    <label>Tienda para descontar inventario:</label>
+                    <select
+                      value={tiendaSeleccionada}
+                      onChange={(e) => setTiendaSeleccionada(e.target.value)}
+                      className="select-tienda"
+                    >
+                      {tiendas.map((tienda) => (
+                        <option key={tienda.id} value={tienda.id}>
+                          {tienda.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Botón de completar venta */}
+              <button
+                className="btn-completar-venta"
+                onClick={procesarVenta}
+                disabled={procesandoVenta}
+              >
+                {procesandoVenta ? (
+                  <>
+                    <div className="spinner-small"></div>
+                    Procesando...
+                  </>
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faCashRegister} />
+                    Completar Venta - $
+                    {calcularTotal().toLocaleString("es-MX", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </>
+                )}
+              </button>
+            </>
+          )}
+
+          {/* Mensaje cuando no hay items */}
+          {carrito.length === 0 && (
+            <div className="panel-vacio">
+              <FontAwesomeIcon icon={faShoppingCart} size="3x" />
+              <p>Agrega productos al carrito</p>
+              <span>
+                Escanea códigos de barras o busca productos por SKU en el campo
+                superior
+              </span>
+            </div>
+          )}
         </div>
-      </BasicModal>
+      </div>
     </div>
   );
 };
