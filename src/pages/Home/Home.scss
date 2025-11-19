@@ -1,0 +1,482 @@
+// src/pages/Home/Home.scss
+.home-container {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+
+  .cargando-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    gap: 15px;
+
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #9b7fa8;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    p {
+      color: #666;
+      font-size: 16px;
+    }
+  }
+
+  .home-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+
+    h1 {
+      font-size: 32px;
+      color: #2c3e50;
+      margin: 0;
+      font-weight: 700;
+    }
+
+    .fecha-actual {
+      color: #7f8c8d;
+      font-size: 14px;
+      margin: 5px 0 0 0;
+      text-transform: capitalize;
+    }
+  }
+
+  // KPIs Generales
+  .kpis-generales {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+
+    .kpi-card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      transition: all 0.3s ease;
+
+      &:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
+      }
+
+      .kpi-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        color: white;
+      }
+
+      .kpi-info {
+        flex: 1;
+
+        .kpi-label {
+          font-size: 13px;
+          color: #7f8c8d;
+          margin: 0 0 5px 0;
+          font-weight: 500;
+        }
+
+        .kpi-valor {
+          font-size: 28px;
+          font-weight: 700;
+          margin: 0;
+          color: #2c3e50;
+        }
+      }
+
+      &.kpi-ventas .kpi-icon {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      }
+
+      &.kpi-transacciones .kpi-icon {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      }
+
+      &.kpi-tiendas .kpi-icon {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      }
+
+      &.kpi-promedio .kpi-icon {
+        background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+      }
+    }
+  }
+
+  // Contenido Principal
+  .home-content {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 20px;
+
+    @media (max-width: 1024px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  // Sección de Tiendas
+  .seccion-tiendas {
+    background: white;
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+    .seccion-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+
+      h2 {
+        font-size: 20px;
+        color: #2c3e50;
+        margin: 0;
+        font-weight: 600;
+
+        svg {
+          margin-right: 8px;
+          color: #9b7fa8;
+        }
+      }
+    }
+
+    .tiendas-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .tienda-card {
+      background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+      border: 2px solid #e8e8e8;
+      padding: 20px;
+      border-radius: 10px;
+      transition: all 0.3s ease;
+
+      &:hover {
+        border-color: #9b7fa8;
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(155, 127, 168, 0.2);
+      }
+
+      .tienda-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+
+        h3 {
+          font-size: 18px;
+          color: #2c3e50;
+          margin: 0;
+          font-weight: 600;
+        }
+
+        .badge-activa {
+          background: #d4edda;
+          color: #155724;
+          padding: 4px 10px;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 600;
+
+          svg {
+            font-size: 10px;
+            margin-right: 4px;
+          }
+        }
+
+        .badge-inactiva {
+          background: #f8d7da;
+          color: #721c24;
+          padding: 4px 10px;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 600;
+
+          svg {
+            font-size: 10px;
+            margin-right: 4px;
+          }
+        }
+      }
+
+      .tienda-stats {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+
+        .stat {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+
+          .stat-icon {
+            font-size: 24px;
+          }
+
+          .stat-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin: 0;
+          }
+
+          .stat-valor {
+            font-size: 18px;
+            font-weight: 700;
+            color: #2c3e50;
+            margin: 0;
+          }
+        }
+      }
+
+      .tienda-ubicacion {
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid #e0e0e0;
+
+        small {
+          color: #7f8c8d;
+          font-size: 12px;
+        }
+      }
+    }
+  }
+
+  // Actividad Reciente
+  .seccion-actividad {
+    background: white;
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    max-height: 800px;
+    display: flex;
+    flex-direction: column;
+
+    .seccion-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+
+      h2 {
+        font-size: 20px;
+        color: #2c3e50;
+        margin: 0;
+        font-weight: 600;
+
+        svg {
+          margin-right: 8px;
+          color: #9b7fa8;
+        }
+      }
+
+      .btn-ver-todo {
+        background: #9b7fa8;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+
+        &:hover {
+          background: #7d6689;
+          transform: scale(1.05);
+        }
+      }
+    }
+
+    .actividad-lista {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+      flex: 1;
+
+      &::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      &::-webkit-scrollbar-thumb {
+        background: #d0d0d0;
+        border-radius: 3px;
+      }
+
+      .actividad-item {
+        display: flex;
+        gap: 12px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border-left: 4px solid #9b7fa8;
+        cursor: pointer;
+        transition: all 0.3s ease;
+
+        &:hover {
+          background: #e9ecef;
+          transform: translateX(5px);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .actividad-icon {
+          width: 40px;
+          height: 40px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-size: 16px;
+          flex-shrink: 0;
+        }
+
+        .actividad-info {
+          flex: 1;
+          min-width: 0;
+
+          .actividad-principal {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            gap: 10px;
+
+            .actividad-titulo {
+              font-weight: 600;
+              color: #2c3e50;
+              font-size: 14px;
+            }
+
+            .actividad-estado {
+              padding: 3px 8px;
+              border-radius: 12px;
+              font-size: 11px;
+              font-weight: 600;
+              text-transform: uppercase;
+              white-space: nowrap;
+
+              &.estado-completada {
+                background: #d4edda;
+                color: #155724;
+              }
+
+              &.estado-apartado {
+                background: #fff3cd;
+                color: #856404;
+              }
+
+              &.estado-cancelada {
+                background: #f8d7da;
+                color: #721c24;
+              }
+            }
+          }
+
+          .actividad-detalles {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 12px;
+
+            .actividad-monto {
+              color: #9b7fa8;
+              font-weight: 700;
+              font-size: 13px;
+            }
+
+            .actividad-cliente {
+              color: #7f8c8d;
+            }
+
+            .actividad-hora {
+              color: #95a5a6;
+              margin-left: auto;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Sin datos
+  .sin-datos {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: #95a5a6;
+
+    svg {
+      margin-bottom: 15px;
+      opacity: 0.5;
+    }
+
+    p {
+      font-size: 16px;
+      margin: 0;
+    }
+  }
+}
+
+// Responsive
+@media (max-width: 768px) {
+  .home-container {
+    padding: 15px;
+
+    .home-header h1 {
+      font-size: 24px;
+    }
+
+    .kpis-generales {
+      grid-template-columns: 1fr;
+      gap: 15px;
+
+      .kpi-card {
+        .kpi-info .kpi-valor {
+          font-size: 24px;
+        }
+      }
+    }
+
+    .seccion-tiendas .tiendas-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .home-content {
+      grid-template-columns: 1fr;
+    }
+
+    .seccion-actividad {
+      max-height: 500px;
+    }
+  }
+}
