@@ -25,6 +25,7 @@ import supInventarioRouter from "./routes_copy/inventarioRouter.js";
 import supComisionesRouter from "./routes_copy/comisionesRouter.js";
 import supDescuentosRouter from "./routes_copy/descuentosRouter.js";
 import supCodigosAccesoRouter from "./routes_copy/codigosAccesoRouter.js";
+import storageRouter from "./routes/storageRouter.js";
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -51,6 +52,7 @@ app.use("/supabase/inventario", supInventarioRouter);
 app.use("/supabase/comisiones", supComisionesRouter);
 app.use("/supabase/descuentos", supDescuentosRouter);
 app.use("/supabase/codigos-acceso", supCodigosAccesoRouter);
+app.use("/supabase/storage", storageRouter);
 
 // Montar la API
 

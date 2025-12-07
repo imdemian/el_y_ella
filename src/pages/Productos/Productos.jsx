@@ -27,6 +27,11 @@ export default function ProductosScreen() {
   const [contentModal, setContentModal] = useState(null);
   const [size, setSize] = useState("lg");
 
+  // Visor de imágenes
+  const [showImageViewer, setShowImageViewer] = useState(false);
+  const [imagenSeleccionada, setImagenSeleccionada] = useState(null);
+  const [imagenesProducto, setImagenesProducto] = useState([]);
+
   // Cargar productos
   const cargarProductos = async () => {
     setLoading(true);
@@ -98,6 +103,46 @@ export default function ProductosScreen() {
     setShowModal(true);
   }, []);
 
+  // Ver imágenes del producto
+  const handleVerImagenes = useCallback((row) => {
+    const imagenes = [];
+
+    // Agregar imagen principal del producto
+    if (row.imagen_url) {
+      imagenes.push({
+        url: row.imagen_url,
+        thumbnail: row.imagen_thumbnail_url,
+        tipo: "Principal",
+        descripcion: row.nombre,
+      });
+    }
+
+    // Agregar imágenes de variantes si existen
+    if (row.variantes_producto && row.variantes_producto.length > 0) {
+      row.variantes_producto.forEach((variante) => {
+        if (variante.imagen_url) {
+          imagenes.push({
+            url: variante.imagen_url,
+            thumbnail: variante.imagen_thumbnail_url,
+            tipo: "Variante",
+            descripcion: `${variante.talla || ""} - ${
+              variante.color || ""
+            } (SKU: ${variante.sku})`.trim(),
+          });
+        }
+      });
+    }
+
+    if (imagenes.length === 0) {
+      toast.info("Este producto no tiene imágenes disponibles");
+      return;
+    }
+
+    setImagenesProducto(imagenes);
+    setImagenSeleccionada(0);
+    setShowImageViewer(true);
+  }, []);
+
   // Filtrar productos
   const productosFiltrados = useMemo(() => {
     if (!filterText) return productos;
@@ -115,6 +160,33 @@ export default function ProductosScreen() {
 
   const columns = useMemo(
     () => [
+      {
+        name: "Imagen",
+        cell: (row) => (
+          <div
+            className="producto-imagen clickable"
+            onClick={() => handleVerImagenes(row)}
+            title="Ver imágenes"
+          >
+            {row.imagen_thumbnail_url || row.imagen_url ? (
+              <img
+                src={row.imagen_thumbnail_url || row.imagen_url}
+                alt={row.nombre}
+                className="producto-thumb"
+              />
+            ) : (
+              <div className="producto-sin-imagen">
+                <span>📦</span>
+              </div>
+            )}
+          </div>
+        ),
+        width: "100px",
+        center: true,
+        style: {
+          padding: "12px",
+        },
+      },
       {
         name: "Nombre",
         selector: (row) => row.nombre || "Sin nombre",
@@ -177,7 +249,7 @@ export default function ProductosScreen() {
         grow: 1,
       },
     ],
-    [handleDelete, handleEdit]
+    [handleDelete, handleEdit, handleVerImagenes]
   );
 
   const customStyles = {
@@ -199,7 +271,7 @@ export default function ProductosScreen() {
     },
     rows: {
       style: {
-        minHeight: "60px",
+        minHeight: "80px",
         fontSize: "0.95rem",
         "&:hover": {
           backgroundColor: "#f9fafb",
@@ -228,25 +300,16 @@ export default function ProductosScreen() {
       </div>
 
       <div className="search-bar">
-        <div className="input-group">
-          <span
-            className="input-group-text"
-            style={{
-              borderRadius: "12px 0 0 12px",
-              background: "white",
-              border: "2px solid #e9ecef",
-              borderRight: "none",
-            }}
-          >
-            <FontAwesomeIcon icon={faSearch} style={{ color: "#9b7fa8" }} />
+        <div className="search-input-wrapper">
+          <span className="search-icon">
+            <FontAwesomeIcon icon={faSearch} />
           </span>
           <input
             type="text"
-            className="form-control"
+            className="search-input"
             placeholder="Buscar productos por nombre, descripción o categoría..."
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
-            style={{ borderLeft: "none", borderRadius: "0 12px 12px 0" }}
           />
         </div>
       </div>
@@ -284,6 +347,101 @@ export default function ProductosScreen() {
       >
         {contentModal}
       </BasicModal>
+
+      {/* Visor de imágenes */}
+      {showImageViewer && (
+        <div
+          className="image-viewer-overlay"
+          onClick={() => setShowImageViewer(false)}
+        >
+          <div
+            className="image-viewer-container"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="close-viewer"
+              onClick={() => setShowImageViewer(false)}
+              title="Cerrar"
+            >
+              ✕
+            </button>
+
+            <div className="image-viewer-main">
+              {imagenesProducto.length > 0 && (
+                <>
+                  <div className="imagen-principal-viewer">
+                    <img
+                      src={imagenesProducto[imagenSeleccionada].url}
+                      alt={imagenesProducto[imagenSeleccionada].descripcion}
+                    />
+                  </div>
+
+                  <div className="imagen-info">
+                    <span className="imagen-tipo">
+                      {imagenesProducto[imagenSeleccionada].tipo}
+                    </span>
+                    <span className="imagen-descripcion">
+                      {imagenesProducto[imagenSeleccionada].descripcion}
+                    </span>
+                    <span className="imagen-contador">
+                      {imagenSeleccionada + 1} / {imagenesProducto.length}
+                    </span>
+                  </div>
+
+                  {imagenesProducto.length > 1 && (
+                    <>
+                      <button
+                        className="nav-button prev"
+                        onClick={() =>
+                          setImagenSeleccionada(
+                            imagenSeleccionada === 0
+                              ? imagenesProducto.length - 1
+                              : imagenSeleccionada - 1
+                          )
+                        }
+                        title="Anterior"
+                      >
+                        ‹
+                      </button>
+                      <button
+                        className="nav-button next"
+                        onClick={() =>
+                          setImagenSeleccionada(
+                            imagenSeleccionada === imagenesProducto.length - 1
+                              ? 0
+                              : imagenSeleccionada + 1
+                          )
+                        }
+                        title="Siguiente"
+                      >
+                        ›
+                      </button>
+                    </>
+                  )}
+
+                  <div className="thumbnails-container">
+                    {imagenesProducto.map((img, index) => (
+                      <div
+                        key={index}
+                        className={`thumbnail-item ${
+                          index === imagenSeleccionada ? "active" : ""
+                        }`}
+                        onClick={() => setImagenSeleccionada(index)}
+                      >
+                        <img
+                          src={img.thumbnail || img.url}
+                          alt={img.descripcion}
+                        />
+                        <span className="thumb-label">{img.tipo}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

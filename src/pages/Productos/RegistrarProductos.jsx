@@ -2,6 +2,8 @@
 import React, { useEffect, useState } from "react";
 import { ProductoService } from "../../services/supabase/productoService";
 import { CategoriaService } from "../../services/supabase/categoriaService";
+import { VarianteService } from "../../services/supabase/varianteService";
+import { ImageService } from "../../services/imageService";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -16,6 +18,8 @@ import {
   faTags,
   faMagic,
   faCheck,
+  faImage,
+  faUpload,
 } from "@fortawesome/free-solid-svg-icons";
 import "./RegistrarProductos.scss";
 
@@ -46,7 +50,14 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
   const [coloresSeleccionados, setColoresSeleccionados] = useState([]);
   const [variantes, setVariantes] = useState([]);
   const [costoVariante, setCostoVariante] = useState("");
-  const [aplicarPrecioVariantes, setAplicarPrecioVariantes] = useState(false); // 👈 Nuevo estado
+  const [aplicarPrecioVariantes, setAplicarPrecioVariantes] = useState(false);
+
+  // Estados para imágenes
+  const [imagenPrincipal, setImagenPrincipal] = useState(null); // File object
+  const [imagenPrincipalPreview, setImagenPrincipalPreview] = useState(""); // URL preview
+  const [imagenPrincipalUrl, setImagenPrincipalUrl] = useState(""); // URL guardada en Firestore
+  const [subiendoImagen, setSubiendoImagen] = useState(false);
+  const [imagenesVariantes, setImagenesVariantes] = useState({}); // { varianteId: { file, preview, url } }
 
   useEffect(() => {
     let mounted = true;
@@ -64,6 +75,13 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
             producto.precio_base != null ? String(producto.precio_base) : ""
           );
           setMarca(producto.marca || "");
+
+          // Cargar imagen existente
+          if (producto.imagen_thumbnail_url || producto.imagen_url) {
+            setImagenPrincipalUrl(
+              producto.imagen_thumbnail_url || producto.imagen_url
+            );
+          }
 
           // Cargar variantes existentes si está en modo edición
           if (
@@ -84,19 +102,33 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
               })
             );
 
-            // Extraer tallas y colores únicos de las variantes
+            // Cargar imágenes de variantes existentes
+            const imagenesVariantesMap = {};
             producto.variantes_producto.forEach((v) => {
+              // Extraer tallas y colores únicos
               if (v.atributos?.talla) {
                 tallasExistentes.add(v.atributos.talla);
               }
               if (v.atributos?.color) {
                 coloresExistentes.add(v.atributos.color);
               }
+
+              // Cargar imagen si existe
+              if (v.imagen_thumbnail_url || v.imagen_url) {
+                const varianteId =
+                  v.id || "loaded-" + producto.variantes_producto.indexOf(v);
+                imagenesVariantesMap[varianteId] = {
+                  file: null,
+                  preview: null,
+                  url: v.imagen_thumbnail_url || v.imagen_url,
+                };
+              }
             });
 
             setVariantes(variantesCargadas);
             setTallasSeleccionadas(Array.from(tallasExistentes));
             setColoresSeleccionados(Array.from(coloresExistentes));
+            setImagenesVariantes(imagenesVariantesMap);
           }
         }
       } catch (error) {
@@ -221,6 +253,75 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
     toast.info("Variante eliminada");
   };
 
+  // Funciones para manejo de imágenes
+  const handleImagenChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      // Validar imagen
+      ImageService.validateImage(file);
+
+      // Crear preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagenPrincipalPreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+
+      setImagenPrincipal(file);
+      toast.success("Imagen seleccionada");
+    } catch (error) {
+      toast.error(error.message);
+      e.target.value = "";
+    }
+  };
+
+  const eliminarImagenPreview = () => {
+    setImagenPrincipal(null);
+    setImagenPrincipalPreview("");
+    const input = document.getElementById("imagen-principal-input");
+    if (input) input.value = "";
+  };
+
+  // Manejar imagen de variante
+  const handleImagenVarianteChange = (varianteId, e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      ImageService.validateImage(file);
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagenesVariantes((prev) => ({
+          ...prev,
+          [varianteId]: {
+            file: file,
+            preview: reader.result,
+            url: prev[varianteId]?.url || null,
+          },
+        }));
+      };
+      reader.readAsDataURL(file);
+
+      toast.success("Imagen de variante seleccionada");
+    } catch (error) {
+      toast.error(error.message);
+      e.target.value = "";
+    }
+  };
+
+  const eliminarImagenVariante = (varianteId) => {
+    setImagenesVariantes((prev) => {
+      const updated = { ...prev };
+      delete updated[varianteId];
+      return updated;
+    });
+    const input = document.getElementById(`imagen-variante-${varianteId}`);
+    if (input) input.value = "";
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!nombre.trim() || !precioBase.trim() || !categoriaId) {
@@ -237,6 +338,13 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
       }
     }
 
+    console.log("🔍 DEBUG - Imagen Principal:", {
+      archivo: imagenPrincipal,
+      preview: imagenPrincipalPreview,
+      url: imagenPrincipalUrl,
+      tieneArchivo: !!imagenPrincipal,
+    });
+
     const productoPayload = {
       nombre: nombre.trim(),
       descripcion: descripcion.trim(),
@@ -248,28 +356,86 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
 
     setLoading(true);
     try {
+      // Si hay imagen nueva, subirla primero
+      if (imagenPrincipal && !producto?.id) {
+        // Para productos nuevos, necesitamos crear el producto primero para obtener el ID
+        // Marcar que hay imagen pendiente
+        productoPayload.tiene_imagen_pendiente = true;
+      }
+
       if (producto?.id) {
-        // Modo edición: actualizar producto con variantes
-        const variantesFormateadas = variantes.map((v) => ({
+        // Modo edición: subir imagen si hay una nueva
+        if (imagenPrincipal) {
+          setSubiendoImagen(true);
+          toast.info("Subiendo imagen...");
+          const urls = await ImageService.uploadProductoImagen(
+            producto.id,
+            nombre,
+            imagenPrincipal
+          );
+          productoPayload.imagen_url = urls.original;
+          productoPayload.imagen_thumbnail_url = urls.thumbnail;
+          setSubiendoImagen(false);
+        }
+
+        // Subir imágenes de variantes si hay (solo para variantes con ID real)
+        const variantesConImagenes = [];
+        for (const variante of variantes) {
+          const imagenData = imagenesVariantes[variante.id];
+          // Solo subir imagen si la variante tiene ID real (no temporal)
+          const esVarianteExistente =
+            variante.id && !variante.id.toString().startsWith("temp-");
+
+          if (imagenData?.file && esVarianteExistente) {
+            try {
+              setSubiendoImagen(true);
+              const urls = await ImageService.uploadVarianteImagen(
+                producto.id,
+                nombre,
+                variante.id,
+                imagenData.file
+              );
+              variantesConImagenes.push({
+                ...variante,
+                imagen_url: urls.original,
+                imagen_thumbnail_url: urls.thumbnail,
+              });
+            } catch (error) {
+              console.error(
+                `Error subiendo imagen de variante ${variante.id}:`,
+                error
+              );
+              variantesConImagenes.push(variante);
+            }
+          } else if (imagenData?.url) {
+            // Mantener URL existente
+            variantesConImagenes.push({
+              ...variante,
+              imagen_url: imagenData.url,
+              imagen_thumbnail_url: imagenData.url,
+            });
+          } else {
+            variantesConImagenes.push(variante);
+          }
+        }
+        setSubiendoImagen(false);
+
+        // Actualizar producto con variantes
+        const variantesFormateadas = variantesConImagenes.map((v) => ({
           sku: v.sku.trim(),
           atributos: v.atributos,
           precio: parseFloat(v.precio),
           costo: v.costo ? parseFloat(v.costo) : null,
           activo: v.activo,
+          imagen_url: v.imagen_url || null,
+          imagen_thumbnail_url: v.imagen_thumbnail_url || null,
         }));
 
         const payload = {
           ...productoPayload,
           variantes: variantesFormateadas,
-          aplicarPrecioVariantes: aplicarPrecioVariantes, // 👈 Agregar el flag
+          aplicarPrecioVariantes: aplicarPrecioVariantes,
         };
-
-        console.log("📤 Enviando actualización de producto:");
-        console.log("   ID:", producto.id);
-        console.log("   Producto:", productoPayload);
-        console.log("   Variantes:", variantesFormateadas.length, "variantes");
-        console.log("   Aplicar precio a variantes:", aplicarPrecioVariantes);
-        console.log("   Payload completo:", payload);
 
         const resultado = await ProductoService.actualizarProducto(
           producto.id,
@@ -288,13 +454,126 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
           activo: v.activo,
         }));
 
-        await ProductoService.crearProducto({
+        const resultado = await ProductoService.crearProducto({
           producto: productoPayload,
           variantes: variantesFormateadas,
         });
+
+        // Si se creó el producto, subir imágenes
+        if (resultado?.id) {
+          const actualizaciones = {};
+          let hayActualizaciones = false;
+
+          // Subir imagen principal
+          if (imagenPrincipal) {
+            try {
+              setSubiendoImagen(true);
+              console.log("📸 Subiendo imagen principal...", {
+                productoId: resultado.id,
+                archivo: imagenPrincipal,
+                nombreArchivo: imagenPrincipal.name,
+                tipo: imagenPrincipal.type,
+                tamaño: imagenPrincipal.size,
+              });
+              toast.info("Subiendo imagen principal...");
+              const urls = await ImageService.uploadProductoImagen(
+                resultado.id,
+                nombre,
+                imagenPrincipal
+              );
+              console.log("✅ Imagen subida exitosamente:", urls);
+              actualizaciones.imagen_url = urls.original;
+              actualizaciones.imagen_thumbnail_url = urls.thumbnail;
+              hayActualizaciones = true;
+            } catch (imgError) {
+              console.error("❌ Error subiendo imagen principal:", imgError);
+              toast.warning("Error al subir imagen principal");
+            }
+          } else {
+            console.log("⚠️ No hay imagen principal para subir");
+          }
+
+          // Subir imágenes de variantes si las variantes ya fueron creadas
+          if (
+            resultado.variantes_producto &&
+            resultado.variantes_producto.length > 0
+          ) {
+            const variantesConImagenes = [];
+
+            for (const varianteCreada of resultado.variantes_producto) {
+              // Buscar la variante local por SKU para obtener su imagen
+              const varianteLocal = variantes.find(
+                (v) => v.sku.trim() === varianteCreada.sku
+              );
+              const imagenData = varianteLocal
+                ? imagenesVariantes[varianteLocal.id]
+                : null;
+
+              if (imagenData?.file) {
+                try {
+                  toast.info(
+                    `Subiendo imagen de variante ${varianteCreada.sku}...`
+                  );
+                  const urls = await ImageService.uploadVarianteImagen(
+                    resultado.id,
+                    nombre,
+                    varianteCreada.id, // Usar el ID real del backend
+                    imagenData.file
+                  );
+                  variantesConImagenes.push({
+                    id: varianteCreada.id,
+                    sku: varianteCreada.sku,
+                    imagen_url: urls.original,
+                    imagen_thumbnail_url: urls.thumbnail,
+                  });
+                  hayActualizaciones = true;
+                } catch (error) {
+                  console.error(
+                    `Error subiendo imagen de variante ${varianteCreada.sku}:`,
+                    error
+                  );
+                }
+              }
+            }
+
+            // Solo actualizar si hay imágenes de variantes
+            if (variantesConImagenes.length > 0) {
+              // Actualizar cada variante individualmente con su imagen
+              for (const v of variantesConImagenes) {
+                try {
+                  await VarianteService.actualizarImagenVariante(
+                    v.id,
+                    v.imagen_url,
+                    v.imagen_thumbnail_url
+                  );
+                  console.log(`✅ Variante ${v.sku} actualizada con imagen`);
+                } catch (error) {
+                  console.error(`Error actualizando variante ${v.sku}:`, error);
+                }
+              }
+            }
+          }
+
+          // Actualizar producto con las URLs de las imágenes principales
+          if (hayActualizaciones && actualizaciones.imagen_url) {
+            try {
+              await ProductoService.actualizarProducto(
+                resultado.id,
+                actualizaciones
+              );
+            } catch (updateError) {
+              console.error("Error actualizando imágenes:", updateError);
+              toast.warning(
+                "Producto creado pero error al actualizar imágenes"
+              );
+            }
+          }
+
+          setSubiendoImagen(false);
+        }
+
         toast.success("✅ Producto creado exitosamente");
       }
-
       if (refetch) await refetch();
       setShow(false);
     } catch (err) {
@@ -321,7 +600,7 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
             type="text"
             className="form-control"
             value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
+            onChange={(e) => setNombre(e.target.value.toUpperCase())}
             placeholder="Ingresa el nombre del producto"
             required
           />
@@ -341,6 +620,61 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
             placeholder="Descripción detallada del producto"
             rows={3}
           />
+        </div>
+
+        {/* Sección de Imagen Principal */}
+        <div className="form-group imagen-section">
+          <label>
+            <span className="icon">
+              <FontAwesomeIcon icon={faImage} />
+            </span>
+            Imagen del Producto
+          </label>
+
+          <div className="imagen-container">
+            {imagenPrincipalPreview || imagenPrincipalUrl ? (
+              <div className="imagen-preview">
+                <img
+                  src={imagenPrincipalPreview || imagenPrincipalUrl}
+                  alt="Preview"
+                  className="preview-img"
+                />
+                <button
+                  type="button"
+                  className="btn-eliminar-imagen"
+                  onClick={eliminarImagenPreview}
+                >
+                  <FontAwesomeIcon icon={faTrash} />
+                </button>
+              </div>
+            ) : (
+              <label htmlFor="imagen-principal-input" className="upload-area">
+                <FontAwesomeIcon icon={faUpload} size="2x" />
+                <p>Haz click o arrastra una imagen</p>
+                <span className="upload-hint">JPG, PNG o WEBP (máx. 5MB)</span>
+              </label>
+            )}
+
+            <input
+              id="imagen-principal-input"
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp"
+              onChange={handleImagenChange}
+              style={{ display: "none" }}
+            />
+
+            {!imagenPrincipalPreview && !imagenPrincipalUrl && (
+              <button
+                type="button"
+                className="btn-seleccionar-imagen"
+                onClick={() =>
+                  document.getElementById("imagen-principal-input")?.click()
+                }
+              >
+                <FontAwesomeIcon icon={faImage} /> Seleccionar Imagen
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="form-group">
@@ -411,7 +745,7 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
             type="text"
             className="form-control"
             value={marca}
-            onChange={(e) => setMarca(e.target.value)}
+            onChange={(e) => setMarca(e.target.value.toUpperCase())}
             placeholder="Marca del producto (opcional)"
           />
         </div>
@@ -586,6 +920,19 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
                     </div>
                     <div className="variante-precios">
                       <input
+                        type="text"
+                        className="input-sku"
+                        value={variante.sku}
+                        onChange={(e) =>
+                          actualizarVariante(
+                            index,
+                            "sku",
+                            e.target.value.toUpperCase()
+                          )
+                        }
+                        placeholder="SKU"
+                      />
+                      <input
                         type="number"
                         className="input-precio"
                         value={variante.precio}
@@ -607,6 +954,55 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
                         step="0.01"
                         min="0"
                       />
+                      <div className="variante-imagen-control">
+                        {imagenesVariantes[variante.id]?.preview ||
+                        imagenesVariantes[variante.id]?.url ? (
+                          <div className="variante-imagen-preview">
+                            <img
+                              src={
+                                imagenesVariantes[variante.id]?.preview ||
+                                imagenesVariantes[variante.id]?.url
+                              }
+                              alt="Variante"
+                            />
+                            <button
+                              type="button"
+                              className="btn-eliminar-img-variante"
+                              onClick={() =>
+                                eliminarImagenVariante(variante.id)
+                              }
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <input
+                              id={`imagen-variante-${variante.id}`}
+                              type="file"
+                              accept="image/jpeg,image/jpg,image/png,image/webp"
+                              onChange={(e) =>
+                                handleImagenVarianteChange(variante.id, e)
+                              }
+                              style={{ display: "none" }}
+                            />
+                            <button
+                              type="button"
+                              className="btn-imagen-variante"
+                              onClick={() =>
+                                document
+                                  .getElementById(
+                                    `imagen-variante-${variante.id}`
+                                  )
+                                  ?.click()
+                              }
+                              title="Agregar imagen"
+                            >
+                              <FontAwesomeIcon icon={faImage} />
+                            </button>
+                          </>
+                        )}
+                      </div>
                       <button
                         type="button"
                         className="btn-eliminar-variante"
@@ -623,11 +1019,21 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
           )}
         </div>
 
-        <button type="submit" className="btn-submit" disabled={loading}>
-          {loading && (
+        <button
+          type="submit"
+          className="btn-submit"
+          disabled={loading || subiendoImagen}
+        >
+          {(loading || subiendoImagen) && (
             <FontAwesomeIcon icon={faSpinner} spin className="spinner" />
           )}
-          {producto?.id ? "Actualizar Producto" : "Guardar Producto"}
+          {subiendoImagen
+            ? "Subiendo imagen..."
+            : loading
+            ? "Guardando..."
+            : producto?.id
+            ? "Actualizar Producto"
+            : "Guardar Producto"}
         </button>
       </form>
     </div>
