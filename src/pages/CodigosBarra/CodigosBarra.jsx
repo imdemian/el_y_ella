@@ -157,44 +157,27 @@ const CodigosBarra = () => {
     toast.info("Generando PDF, por favor espera...");
 
     try {
+      // Dimensiones de la etiqueta: 2" de ancho x 1" de alto
+      const labelWidth = 50.8; // 2 pulgadas = 50.8mm
+      const labelHeight = 25.4; // 1 pulgada = 25.4mm
+
       const pdf = new jsPDF({
-        orientation: "portrait",
+        orientation: "landscape",
         unit: "mm",
-        format: "a4",
+        format: [labelHeight, labelWidth], // [alto, ancho] = [1", 2"]
       });
 
-      // Dimensiones de la etiqueta (2" x 1" = 50.8mm x 25.4mm)
-      const labelWidth = 50.8;
-      const labelHeight = 25.4;
-      const margin = 10;
-      const spacing = 5;
+      // La etiqueta ocupa toda la página
+      const x = 0;
+      const y = 0;
 
-      // Calcular cuántas etiquetas caben por fila y columna
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const labelsPerRow = Math.floor(
-        (pageWidth - 2 * margin + spacing) / (labelWidth + spacing)
-      );
-      const labelsPerColumn = Math.floor(
-        (pageHeight - 2 * margin + spacing) / (labelHeight + spacing)
-      );
-      const labelsPerPage = labelsPerRow * labelsPerColumn;
-
-      let labelIndex = 0;
+      const JsBarcode = (await import("jsbarcode")).default;
 
       for (let i = 0; i < etiquetasParaImprimir.length; i++) {
         const etiqueta = etiquetasParaImprimir[i];
 
-        // Calcular posición en el grid
-        const posInPage = labelIndex % labelsPerPage;
-        const row = Math.floor(posInPage / labelsPerRow);
-        const col = posInPage % labelsPerRow;
-
-        const x = margin + col * (labelWidth + spacing);
-        const y = margin + row * (labelHeight + spacing);
-
-        // Si no es la primera etiqueta y necesitamos nueva página
-        if (i > 0 && posInPage === 0) {
+        // Agregar nueva página para cada etiqueta (excepto la primera)
+        if (i > 0) {
           pdf.addPage();
         }
 
@@ -215,7 +198,6 @@ const CodigosBarra = () => {
 
         // Generar código de barras como imagen
         const barcodeCanvas = document.createElement("canvas");
-        const JsBarcode = (await import("jsbarcode")).default;
         JsBarcode(barcodeCanvas, etiqueta.sku, {
           format: "CODE128",
           width: 1,
@@ -237,12 +219,12 @@ const CodigosBarra = () => {
           barcodeWidth,
           barcodeHeight
         );
-
-        labelIndex++;
       }
 
       pdf.save("etiquetas-codigos-de-barra.pdf");
-      toast.success("PDF exportado exitosamente.");
+      toast.success(
+        `PDF exportado exitosamente con ${etiquetasParaImprimir.length} páginas.`
+      );
       setShowPreviewModal(false);
     } catch (error) {
       console.error("Error generando PDF:", error);
