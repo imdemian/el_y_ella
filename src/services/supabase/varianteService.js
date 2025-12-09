@@ -1,7 +1,7 @@
 // src/services/supabase/varianteService.js
+import { FUNCTIONS_URL } from "../../utils/constants";
 
-const API_URL =
-  "http://localhost:5001/elyella-d411f/us-central1/api/supabase/variantes";
+const API_URL = `${FUNCTIONS_URL}/variantes`;
 
 export class VarianteService {
   /**
@@ -153,6 +153,20 @@ export class VarianteService {
     }
 
     return await response.json();
+  }
+
+  /**
+   * Actualizar solo las URLs de imagen de una variante
+   */
+  static async actualizarImagenVariante(
+    varianteId,
+    imagenUrl,
+    imagenThumbnailUrl
+  ) {
+    return this.actualizarVariante(varianteId, {
+      imagen_url: imagenUrl,
+      imagen_thumbnail_url: imagenThumbnailUrl,
+    });
   }
 
   /**

@@ -2,8 +2,10 @@
 import React, { useContext } from "react";
 import "./sidebar.scss";
 import {
+  faBarcode,
   faBars,
   faBoxesStacked,
+  faCashRegister,
   faChildDress,
   faCog,
   faHistory,
@@ -12,6 +14,7 @@ import {
   faShop,
   faSignOutAlt,
   faTag,
+  faTicket,
   faUsers,
   faWarehouse,
 } from "@fortawesome/free-solid-svg-icons";
@@ -48,6 +51,8 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   const permisosPorRol = {
     admin: [
       "Inicio",
+      "Preventa",
+      "Caja",
       "Ventas",
       "Historial",
       "Etiquetas",
@@ -56,9 +61,20 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
       "Usuarios",
       "Tiendas",
     ],
-    MANAGER: ["Inicio", "Ventas", "Productos", "Usuarios"],
+    manager: [
+      "Inicio",
+      "Preventa",
+      "Caja",
+      "Ventas",
+      "Historial",
+      "Productos",
+      "Inventario",
+    ],
+    vendedor: ["Inicio", "Preventa"],
+    empleado: ["Inicio", "Preventa"],
+    cajero: ["Inicio", "Caja", "Historial"],
     TECNICO: ["Inicio", "Órdenes de Trabajo"],
-    user: ["Inicio", "Ventas"],
+    user: ["Inicio"],
   };
 
   // ==========================
@@ -66,9 +82,11 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   // ==========================
   const menuItems = [
     { title: "Inicio", route: "/home", icon: faHome },
+    { title: "Preventa", route: "/preventa", icon: faTicket },
+    { title: "Caja", route: "/caja", icon: faCashRegister },
     { title: "Ventas", route: "/ventas", icon: faMoneyBill1 },
     { title: "Historial", route: "/historial", icon: faHistory },
-    { title: "Etiquetas", route: "/codigos-barra", icon: faTag },
+    { title: "Etiquetas", route: "/codigos-barra", icon: faBarcode },
     { title: "Productos", route: "/productos", icon: faBoxesStacked },
     { title: "Inventario", route: "/inventario", icon: faWarehouse },
     { title: "Usuarios", route: "/usuarios", icon: faUsers },

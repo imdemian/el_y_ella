@@ -30,7 +30,8 @@ export class VentaService {
 
     console.log(
       "📡 [VentaService] crearVenta - Response status:",
-      response.status
+      response.status,
+      response.body
     );
 
     if (!response.ok) {
@@ -165,6 +166,96 @@ export class VentaService {
 
     const result = await response.json();
     console.log("📡 [VentaService] buscarVariantes - Resultado:", result);
+    return result;
+  }
+
+  /**
+   * Obtener ventas pendientes de pago (tickets generados)
+   */
+  static async obtenerVentasPendientes(tienda_id = null) {
+    console.log("📡 [VentaService] obtenerVentasPendientes");
+
+    const url = tienda_id
+      ? `${API_URL}/pendientes?tienda_id=${tienda_id}`
+      : `${API_URL}/pendientes`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: this._getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("No autorizado. Por favor inicia sesión nuevamente.");
+      }
+      const error = await response.json();
+      throw new Error(error.message || "Error al obtener ventas pendientes");
+    }
+
+    return await response.json();
+  }
+
+  /**
+   * Buscar una venta por folio
+   */
+  static async buscarPorFolio(folio) {
+    console.log("📡 [VentaService] buscarPorFolio - Folio:", folio);
+
+    const response = await fetch(`${API_URL}/folio/${folio}`, {
+      method: "GET",
+      headers: this._getAuthHeaders(),
+    });
+
+    console.log(
+      "📡 [VentaService] buscarPorFolio - Response status:",
+      response.status
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("No autorizado. Por favor inicia sesión nuevamente.");
+      }
+      if (response.status === 404) {
+        throw new Error("Ticket no encontrado");
+      }
+      const error = await response.json();
+      throw new Error(error.message || "Error al buscar ticket");
+    }
+
+    const result = await response.json();
+    console.log("📡 [VentaService] buscarPorFolio - Resultado:", result);
+    return result;
+  }
+
+  /**
+   * Cobrar una venta pendiente (procesar ticket)
+   */
+  static async cobrarVentaPendiente(ventaId, metodoPago) {
+    console.log("📡 [VentaService] cobrarVentaPendiente - ID:", ventaId);
+    console.log("📡 [VentaService] cobrarVentaPendiente - Método:", metodoPago);
+
+    const response = await fetch(`${API_URL}/${ventaId}/cobrar`, {
+      method: "PUT",
+      headers: this._getAuthHeaders(),
+      body: JSON.stringify({ metodo_pago: metodoPago }),
+    });
+
+    console.log(
+      "📡 [VentaService] cobrarVentaPendiente - Response status:",
+      response.status
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("No autorizado. Por favor inicia sesión nuevamente.");
+      }
+      const error = await response.json();
+      console.error("📡 [VentaService] cobrarVentaPendiente - Error:", error);
+      throw new Error(error.message || "Error al cobrar el ticket");
+    }
+
+    const result = await response.json();
+    console.log("📡 [VentaService] cobrarVentaPendiente - Resultado:", result);
     return result;
   }
 }
