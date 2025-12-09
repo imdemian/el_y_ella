@@ -48,21 +48,45 @@ router.post("/", async (req, res) => {
     // Determinar la tienda para la venta
     let tienda_venta = null;
 
+    console.log("🔍 DEBUG tienda_id recibido:");
+    console.log(
+      "  - req.body.tienda_id:",
+      tienda_id,
+      "- Tipo:",
+      typeof tienda_id
+    );
+    console.log(
+      "  - req.user.tienda_id:",
+      usuario_tienda_id,
+      "- Tipo:",
+      typeof usuario_tienda_id
+    );
+
     // Si el usuario tiene tienda asignada, usar esa
     if (usuario_tienda_id) {
       tienda_venta = usuario_tienda_id;
+      console.log("  ✅ Usando tienda del usuario:", tienda_venta);
     }
     // Si NO tiene tienda, DEBE especificar tienda_id en el body
     else if (tienda_id) {
       tienda_venta = tienda_id;
+      console.log("  ✅ Usando tienda del body:", tienda_venta);
     }
     // Si no tiene tienda asignada y no envió tienda_id
     else {
+      console.log("  ❌ No se especificó tienda");
       return res.status(400).json({
         message: "Debe especificar de qué tienda se tomará el inventario",
         requiere_tienda: true, // Flag para el frontend (mostrar selector de tienda)
       });
     }
+
+    console.log(
+      "  🎯 tienda_venta final:",
+      tienda_venta,
+      "- Tipo:",
+      typeof tienda_venta
+    );
 
     // Verificar que la tienda especificada tenga stock suficiente
     const variantes_ids = items.map((item) => item.variante_id);
@@ -130,132 +154,59 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // Crear la venta (AHORA INCLUYE TIENDA_ID Y CÓDIGO DE DESCUENTO)
-    const { data: venta, error: errorVenta } = await supabase
-      .from("ventas")
-      .insert({
-        usuario_id: usuario_id,
-        tienda_id: tienda_venta, // AGREGADO: Registrar tienda de la venta
-        cliente_info: cliente_info, // JSONB con datos del cliente (puede ser null)
-        subtotal: subtotal,
-        descuento: descuento,
-        impuestos: impuestos,
-        total: total,
-        metodo_pago: metodo_pago, // JSONB: ej. {"efectivo": 500} o {"tarjeta": 1000}
-        estado_venta: estado_venta, // 'completada', 'apartado', 'cancelada'
-        codigo_descuento_id: codigo_descuento_id, // ID del código de descuento
-        descuento_aplicado: descuento_aplicado, // Monto del descuento
-        notas: notas || null,
-      })
-      .select()
-      .single();
+    // ========================================================================
+    // INICIAR TRANSACCIÓN PARA GARANTIZAR CONSISTENCIA DE DATOS
+    // ========================================================================
+    // Si algo falla durante el proceso, TODA la operación se revierte automáticamente
+    // Esto previene estados inconsistentes como: inventario descontado pero venta no creada,
+    // o algunos productos descontados pero no todos.
 
-    if (errorVenta) {
-      console.error("Error al crear venta:", errorVenta);
-      return res.status(500).json({ message: "Error al crear la venta" });
-    }
+    try {
+      // Usar RPC para ejecutar todo en una transacción PostgreSQL
+      const { data: resultadoVenta, error: errorTransaccion } =
+        await supabase.rpc("crear_venta_transaccional", {
+          p_usuario_id: usuario_id,
+          p_tienda_id: tienda_id,
+          p_cliente_info: cliente_info,
+          p_subtotal: subtotal,
+          p_descuento: descuento,
+          p_impuestos: impuestos,
+          p_total: total,
+          p_metodo_pago: metodo_pago,
+          p_estado_venta: estado_venta,
+          p_codigo_descuento_id: codigo_descuento_id,
+          p_descuento_aplicado: descuento_aplicado,
+          p_notas: notas || null,
+          p_items: JSON.stringify(items), // Pasar items como JSON string
+        });
 
-    // Si se aplicó un descuento, registrar su uso
-    if (codigo_descuento_id && descuento_aplicado > 0) {
-      try {
-        // Registrar uso del descuento
-        const { error: errorUsoDescuento } = await supabase
-          .from("uso_descuentos")
-          .insert({
-            codigo_descuento_id: codigo_descuento_id,
-            venta_id: venta.id,
-            cliente_info: cliente_info,
-            monto_descuento: descuento_aplicado,
-          });
-
-        if (errorUsoDescuento) {
-          console.error(
-            "Error al registrar uso de descuento:",
-            errorUsoDescuento
-          );
-          // No fallar la venta, solo registrar el error
-        }
-
-        // Incrementar contador de usos del código de descuento
-        const { data: descuento, error: errorDescuento } = await supabase
-          .from("codigos_descuento")
-          .select("usos_actuales")
-          .eq("id", codigo_descuento_id)
-          .single();
-
-        if (!errorDescuento && descuento) {
-          await supabase
-            .from("codigos_descuento")
-            .update({ usos_actuales: (descuento.usos_actuales || 0) + 1 })
-            .eq("id", codigo_descuento_id);
-        }
-      } catch (descuentoError) {
-        console.error("Error procesando descuento:", descuentoError);
-        // Continuar con la venta aunque falle el registro del descuento
+      if (errorTransaccion) {
+        console.error("❌ Error en transacción de venta:", errorTransaccion);
+        return res.status(500).json({
+          message: "Error al procesar la venta",
+          error: errorTransaccion.message,
+        });
       }
-    }
 
-    // Crear items de venta
-    const itemsVenta = items.map((item) => ({
-      venta_id: venta.id,
-      variante_id: item.variante_id,
-      cantidad: item.cantidad,
-      precio_unitario: item.precio_unitario,
-      descuento_item: 0,
-      subtotal_linea: item.subtotal,
-    }));
-
-    const { error: errorItems } = await supabase
-      .from("ventas_items")
-      .insert(itemsVenta);
-
-    if (errorItems) {
-      console.error("Error al crear items de venta:", errorItems);
-      // Revertir la venta
-      await supabase.from("ventas").delete().eq("id", venta.id);
-      return res.status(500).json({ message: "Error al crear items de venta" });
-    }
-
-    // Actualizar inventario SOLO EN LA TIENDA ESPECÍFICA
-    for (const item of items) {
-      // Obtener stock actual de la tienda (de los datos ya consultados)
-      const invTienda = variantesTienda.find(
-        (it) => it.variante_id === item.variante_id
+      console.log(
+        "✅ Venta creada exitosamente con transacción:",
+        resultadoVenta
       );
-      const stockActualTienda = invTienda?.cantidad_disponible || 0;
-      const nuevoStockTienda = stockActualTienda - item.cantidad;
 
-      // Actualizar inventario_tiendas
-      const { error: errorInventarioTienda } = await supabase
-        .from("inventario_tiendas")
-        .update({ cantidad_disponible: nuevoStockTienda })
-        .eq("variante_id", item.variante_id)
-        .eq("tienda_id", tienda_venta);
-
-      if (errorInventarioTienda) {
-        console.error(
-          "Error al actualizar inventario de tienda:",
-          errorInventarioTienda
-        );
-      }
-
-      // OPCIONAL: Registrar movimiento de inventario para auditoría
-      await supabase.from("movimientos_inventario").insert({
-        variante_id: item.variante_id,
-        tienda_id: tienda_venta,
-        tipo_movimiento: "salida",
-        cantidad: item.cantidad,
-        usuario_id: usuario_id,
-        motivo: `Venta #${venta.folio || venta.id}`,
+      res.status(201).json({
+        message: "Venta creada exitosamente",
+        id: resultadoVenta.venta_id,
+        folio: resultadoVenta.folio,
+        total: resultadoVenta.total,
+      });
+    } catch (transactionError) {
+      // Si la transacción falla, PostgreSQL automáticamente revierte TODOS los cambios
+      console.error("❌ Error crítico en transacción:", transactionError);
+      res.status(500).json({
+        message: "Error al procesar la venta. No se realizaron cambios.",
+        error: transactionError.message,
       });
     }
-
-    res.status(201).json({
-      message: "Venta creada exitosamente",
-      id: venta.id,
-      folio: venta.folio,
-      total: venta.total,
-    });
   } catch (error) {
     console.error("Error en POST /ventas:", error);
     res.status(500).json({ message: "Error interno del servidor" });
@@ -453,6 +404,90 @@ router.get("/buscar-variantes", async (req, res) => {
 });
 
 /**
+ * GET /ventas/pendientes
+ * Obtener ventas pendientes de pago (tickets generados)
+ * IMPORTANTE: Esta ruta debe estar ANTES de /:id para evitar conflictos
+ */
+router.get("/pendientes", async (req, res) => {
+  try {
+    const { tienda_id } = req.query;
+    const usuario_tienda_id = req.user?.tienda_id;
+
+    let query = supabase
+      .from("ventas")
+      .select(
+        `
+        id,
+        folio,
+        total,
+        created_at,
+        notas,
+        tiendas(nombre),
+        ventas_items(
+          cantidad,
+          precio_unitario,
+          subtotal_linea,
+          variantes_producto(sku, productos(nombre))
+        )
+      `
+      )
+      .eq("estado_venta", "pendiente")
+      .order("created_at", { ascending: false });
+
+    // Filtrar por tienda si se especifica o si el usuario tiene tienda asignada
+    const tienda_filtro = tienda_id || usuario_tienda_id;
+    if (tienda_filtro) {
+      query = query.eq("tienda_id", tienda_filtro);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error al obtener ventas pendientes:", error);
+      return res
+        .status(500)
+        .json({ message: "Error al obtener ventas pendientes" });
+    }
+
+    // Obtener información de vendedores para cada venta
+    const ventasConVendedor = await Promise.all(
+      data.map(async (venta) => {
+        if (venta.usuario_id) {
+          try {
+            const { data: vendedor, error: vendedorError } = await supabase
+              .from("usuarios")
+              .select("nombre, apellido")
+              .eq("id", venta.usuario_id)
+              .single();
+
+            if (vendedorError) {
+              console.error("Error obteniendo vendedor:", vendedorError);
+              return { ...venta, vendedor: "N/A" };
+            }
+
+            return {
+              ...venta,
+              vendedor: vendedor
+                ? `${vendedor.nombre} ${vendedor.apellido || ""}`.trim()
+                : "N/A",
+            };
+          } catch (error) {
+            console.error("Error en consulta de vendedor:", error);
+            return { ...venta, vendedor: "N/A" };
+          }
+        }
+        return { ...venta, vendedor: "N/A" };
+      })
+    );
+
+    res.json(ventasConVendedor);
+  } catch (error) {
+    console.error("Error en GET /ventas/pendientes:", error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+});
+
+/**
  * GET /ventas/:id
  * Obtener una venta por ID con todos sus detalles
  */
@@ -601,6 +636,130 @@ router.put("/:id/cancelar", async (req, res) => {
   } catch (error) {
     console.error("Error en PUT /ventas/:id/cancelar:", error);
     res.status(500).json({ message: "Error interno del servidor" });
+  }
+});
+
+/**
+ * GET /ventas/folio/:folio
+ * Buscar una venta por folio
+ */
+router.get("/folio/:folio", async (req, res) => {
+  try {
+    const { folio } = req.params;
+
+    const { data, error } = await supabase
+      .from("ventas")
+      .select(
+        `
+        *,
+        tiendas(nombre, direccion),
+        ventas_items(
+          *,
+          variantes_producto(
+            sku, 
+            precio,
+            atributos,
+            imagen_url,
+            imagen_thumbnail_url,
+            productos(nombre, descripcion)
+          )
+        )
+      `
+      )
+      .eq("folio", folio)
+      .single();
+
+    if (error) {
+      console.error("Error al obtener venta por folio:", error);
+      if (error.code === "PGRST116") {
+        return res.status(404).json({ message: "Venta no encontrada" });
+      }
+      return res.status(500).json({ message: "Error al obtener la venta" });
+    }
+
+    // Obtener información del vendedor
+    if (data.usuario_id) {
+      try {
+        const { data: vendedor, error: vendedorError } = await supabase
+          .from("usuarios")
+          .select("nombre, apellido")
+          .eq("id", data.usuario_id)
+          .single();
+
+        if (vendedorError) {
+          console.error("Error obteniendo vendedor:", vendedorError);
+          data.vendedor = "N/A";
+        } else {
+          data.vendedor = vendedor
+            ? `${vendedor.nombre} ${vendedor.apellido || ""}`.trim()
+            : "N/A";
+        }
+      } catch (error) {
+        console.error("Error en consulta de vendedor:", error);
+        data.vendedor = "N/A";
+      }
+    } else {
+      data.vendedor = "N/A";
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error("Error en GET /ventas/folio/:folio:", error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+});
+
+/**
+ * PUT /ventas/:id/cobrar
+ * Cobrar una venta pendiente (procesar ticket)
+ * Descuenta el inventario y actualiza el estado a 'completada'
+ */
+router.put("/:id/cobrar", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { metodo_pago } = req.body;
+    const cajero_id = req.user?.id;
+
+    // Validaciones
+    if (!metodo_pago) {
+      return res
+        .status(400)
+        .json({ message: "El método de pago es requerido" });
+    }
+
+    console.log(`💰 Cobrando venta ${id} - Cajero: ${cajero_id}`);
+
+    // Usar RPC para ejecutar todo en una transacción PostgreSQL
+    const { data: resultado, error: errorTransaccion } = await supabase.rpc(
+      "cobrar_venta_pendiente",
+      {
+        p_venta_id: id,
+        p_cajero_id: cajero_id,
+        p_metodo_pago: metodo_pago,
+      }
+    );
+
+    if (errorTransaccion) {
+      console.error("❌ Error al cobrar venta:", errorTransaccion);
+      return res.status(500).json({
+        message: "Error al procesar el cobro",
+        error: errorTransaccion.message,
+      });
+    }
+
+    console.log("✅ Venta cobrada exitosamente:", resultado);
+
+    res.json({
+      message: "Ticket cobrado exitosamente",
+      folio: resultado[0]?.folio,
+      total: resultado[0]?.total,
+    });
+  } catch (error) {
+    console.error("Error en PUT /ventas/:id/cobrar:", error);
+    res.status(500).json({
+      message: "Error al procesar el cobro. No se realizaron cambios.",
+      error: error.message,
+    });
   }
 });
 

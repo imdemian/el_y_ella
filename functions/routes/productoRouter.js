@@ -1,549 +1,614 @@
-// routers/productos.router.js
+// functions/routes/productoRouter.js
 import express from "express";
-import { db } from "../admin.js";
+import { supabaseAdmin as supabase } from "../config/supabase.js";
+import {
+  authenticateToken,
+  requireRole,
+} from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-// Colecciones
-const productsCol = db.collection("productos");
-const barcodesCol = db.collection("barcodes");
-const skusCol = db.collection("skus");
-const invAggCol = db.collection("inventoryAgg");
-const invIdxCol = db.collection("inventoryIndex");
+// Aplicar autenticación a todas las rutas
+router.use(authenticateToken);
 
-// -------------------- Helpers --------------------
-const toStr = (v) => (v == null ? "" : String(v));
-const norm = (s) => toStr(s).trim();
-const upper = (s) => norm(s).toUpperCase();
-const lower = (s) => norm(s).toLowerCase();
-
-function sanitizeVariantes(variantes = [], precioBase = 0) {
-  if (!Array.isArray(variantes)) return [];
-  const seenIds = new Set();
-  const seenCombos = new Set(); // evitar combos duplicados
-
-  const clean = variantes.map((v) => {
-    const id = norm(v.id);
-    if (!id) throw new Error("Cada variante debe incluir un id estable.");
-    if (seenIds.has(id)) throw new Error(`ID de variante duplicado: ${id}`);
-    seenIds.add(id);
-
-    const precio = Number(v.precio ?? precioBase);
-    if (Number.isNaN(precio) || precio < 0) {
-      throw new Error(`Precio inválido en variante ${id}`);
-    }
-
-    const attrs = v.atributos || {};
-    const key = JSON.stringify(
-      Object.entries(attrs)
-        .map(([k, val]) => [lower(k), norm(val)])
-        .sort(([a], [b]) => a.localeCompare(b))
-    );
-    if (seenCombos.has(key)) {
-      throw new Error(`Combinación de atributos duplicada en variante ${id}`);
-    }
-    seenCombos.add(key);
-
-    const sku = norm(v.sku || "");
-    const barcode = upper(v.barcode || ""); // guardamos uppercase
-
-    return {
-      id,
-      sku: sku || null,
-      barcode: barcode || null,
-      precio,
-      atributos: attrs,
-    };
-  });
-
-  return clean;
-}
-
-async function syncBarcodes(productId, nuevas = [], prev = []) {
-  const prevMap = new Map(
-    (prev || []).filter((v) => v.barcode).map((v) => [upper(v.barcode), v])
-  );
-  const nextMap = new Map(
-    (nuevas || []).filter((v) => v.barcode).map((v) => [upper(v.barcode), v])
-  );
-
-  // Duplicados dentro del payload
-  if (nextMap.size !== (nuevas || []).filter((v) => v.barcode).length) {
-    throw new Error("Barcode duplicado en el payload.");
-  }
-
-  // Validar que no exista en otro producto/variante
-  for (const [code, v] of nextMap) {
-    const doc = await barcodesCol.doc(code).get();
-    if (doc.exists) {
-      const data = doc.data(); // { productId, variantId }
-      if (data.productId !== productId) {
-        throw new Error(`El barcode ${code} ya está asignado a otro producto.`);
-      }
-      if (data.productId === productId && data.variantId !== v.id) {
-        throw new Error(
-          `El barcode ${code} ya está asignado a otra variante (${data.variantId}) de este producto.`
-        );
-      }
-    }
-  }
-
-  const batch = db.batch();
-
-  // borrar barcodes eliminados
-  for (const [code] of prevMap) {
-    if (!nextMap.has(code)) batch.delete(barcodesCol.doc(code));
-  }
-  // upsert barcodes nuevos/actualizados
-  for (const [code, v] of nextMap) {
-    batch.set(
-      barcodesCol.doc(code),
-      { productId, variantId: v.id },
-      { merge: true }
-    );
-  }
-
-  await batch.commit();
-}
-
-async function syncSkus(productId, nuevas = [], prev = []) {
-  const toMap = (arr) => {
-    const m = new Map();
-    for (const v of arr || []) {
-      const sku = lower(v.sku || "");
-      if (sku) m.set(sku, v);
-    }
-    return m;
-  };
-
-  const prevMap = toMap(prev);
-  const nextMap = toMap(nuevas);
-
-  // Duplicados en el payload
-  if (nextMap.size !== (nuevas || []).filter((v) => norm(v?.sku)).length) {
-    throw new Error("SKU duplicado en el payload.");
-  }
-
-  // Validar que no esté usado por otro producto/variante
-  for (const [sku, v] of nextMap) {
-    const doc = await skusCol.doc(sku).get();
-    if (doc.exists) {
-      const data = doc.data(); // { productId, variantId }
-      if (data.productId !== productId || data.variantId !== v.id) {
-        throw new Error(
-          `El SKU ${sku} ya está asignado a otra variante/producto.`
-        );
-      }
-    }
-  }
-
-  const batch = db.batch();
-
-  // Borra los que ya no están
-  for (const [sku] of prevMap) {
-    if (!nextMap.has(sku)) batch.delete(skusCol.doc(sku));
-  }
-
-  // Upsert nuevos/actualizados
-  for (const [sku, v] of nextMap) {
-    batch.set(
-      skusCol.doc(sku),
-      { productId, variantId: v.id, skuLower: sku },
-      { merge: true }
-    );
-  }
-
-  await batch.commit();
-}
-
-// ---- helpers de borrado en lotes (sin while(true)) ----
-async function deleteQueryInBatches(query, batchSize = 300) {
-  let snap = await query.limit(batchSize).get();
-  while (!snap.empty) {
-    const batch = db.batch();
-    snap.docs.forEach((d) => batch.delete(d.ref));
-    await batch.commit();
-    // vuelve a consultar lo restante
-    snap = await query.limit(batchSize).get();
-  }
-}
-
-async function purgeVariantFromInventory(variantId) {
-  // 1) Agg global
-  await invAggCol
-    .doc(variantId)
-    .delete()
-    .catch(() => {});
-
-  // 2) Índice por tienda
-  const idxQuery = invIdxCol.where("variantId", "==", variantId);
-  await deleteQueryInBatches(idxQuery);
-
-  // 3) Documentos en tiendas/*/inventario (collectionGroup)
-  const cgQuery = db
-    .collectionGroup("inventario")
-    .where("varianteId", "==", variantId);
-  await deleteQueryInBatches(cgQuery);
-}
-
-// -------------------- Crear producto --------------------
-router.post("/", async (req, res) => {
-  try {
-    const {
-      nombre,
-      descripcion,
-      categoria, // nombre visible
-      categoriaId, // id de categoría (opcional pero recomendado)
-      precioBase,
-      imagenes,
-      tieneVariantes,
-      variantes,
-    } = req.body;
-
-    if (!nombre || !categoria || precioBase == null) {
-      return res.status(400).json({
-        success: false,
-        message: "El nombre, categoría y precioBase son requeridos",
-      });
-    }
-
-    // Duplicado por nombre (opcional)
-    const nameSnap = await productsCol.where("nombre", "==", nombre).get();
-    if (!nameSnap.empty) {
-      return res
-        .status(400)
-        .json({ success: false, message: "El producto ya existe" });
-    }
-
-    const now = new Date();
-    const nombreLower = lower(nombre);
-    const categoriaLower = lower(categoria);
-    const cleanVariantes = sanitizeVariantes(variantes || [], precioBase);
-
-    const data = {
-      nombre,
-      nombreLower,
-      descripcion: descripcion || "",
-      categoria, // nombre visible
-      categoriaLower,
-      categoriaId: categoriaId || null,
-      precioBase,
-      imagenes: imagenes || [],
-      tieneVariantes: !!tieneVariantes,
-      variantes: cleanVariantes,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const docRef = await productsCol.add(data);
-
-    await Promise.all([
-      syncBarcodes(docRef.id, cleanVariantes, []),
-      syncSkus(docRef.id, cleanVariantes, []),
-    ]);
-
-    const docSnap = await docRef.get();
-    return res.status(201).json({ id: docSnap.id, ...docSnap.data() });
-  } catch (error) {
-    console.error("Error creando producto:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al crear producto",
-      error: error.message,
-    });
-  }
-});
-
-// -------------------- Listar productos (paginado + slim opcional) --------------------
+// GET /productos - Lista paginada con filtros
 router.get("/", async (req, res) => {
   try {
-    const limit = Math.min(Number(req.query.limit || 20), 100);
-    const startAfterId = req.query.startAfter || null;
-    const mode = req.query.mode || "full"; // "full" | "slim"
+    const {
+      page = 1,
+      limit = 20,
+      search = "",
+      categoria_id,
+      activo = true,
+      order_by = "nombre",
+      order_dir = "asc",
+    } = req.query;
 
-    let ref = productsCol.orderBy("createdAt", "desc");
-    if (startAfterId) {
-      const lastSnap = await productsCol.doc(startAfterId).get();
-      if (lastSnap.exists) ref = ref.startAfter(lastSnap);
+    const pageInt = parseInt(page);
+    const limitInt = parseInt(limit);
+    const offset = (pageInt - 1) * limitInt;
+
+    // Construir query base
+    let query = supabase.from("productos").select(
+      `
+        *,
+        categorias (id, nombre),
+        variantes_producto (
+          id,
+          sku,
+          atributos,
+          precio,
+          activo,
+          imagen_url,
+          imagen_thumbnail_url,
+          inventario_global (
+            cantidad_disponible,
+            cantidad_reservada
+          )
+        )
+      `,
+      { count: "exact" }
+    ); // ✅ Contar total de registros
+
+    // Aplicar filtros
+    if (search) {
+      query = query.or(
+        `nombre.ilike.%${search}%,descripcion.ilike.%${search}%`
+      );
     }
 
-    const snap = await ref.limit(limit).get();
-    let productos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-    if (mode === "slim") {
-      productos = productos.map((p) => ({
-        id: p.id,
-        nombre: p.nombre,
-        descripcion: p.descripcion,
-        categoria: p.categoria,
-        categoriaId: p.categoriaId || null,
-        precioBase: p.precioBase,
-        tieneVariantes: !!p.tieneVariantes,
-        variantesCount: Array.isArray(p.variantes) ? p.variantes.length : 0,
-        createdAt: p.createdAt,
-      }));
+    if (categoria_id) {
+      query = query.eq("categoria_id", categoria_id);
     }
 
-    const nextStartAfter = snap.docs.length
-      ? snap.docs[snap.docs.length - 1].id
-      : null;
+    if (activo !== "all") {
+      query = query.eq("activo", activo === "true");
+    }
 
-    res.json({ success: true, productos, nextStartAfter });
-  } catch (e) {
-    console.error("Error listando productos:", e);
-    res.status(500).json({ success: false, message: e.message });
+    // Aplicar ordenamiento
+    const validOrderFields = [
+      "nombre",
+      "precio_base",
+      "created_at",
+      "updated_at",
+    ];
+    const validOrderDirs = ["asc", "desc"];
+
+    const orderField = validOrderFields.includes(order_by)
+      ? order_by
+      : "nombre";
+    const orderDirection = validOrderDirs.includes(order_dir.toLowerCase())
+      ? order_dir
+      : "asc";
+
+    query = query.order(orderField, { ascending: orderDirection === "asc" });
+
+    // Aplicar paginación
+    query = query.range(offset, offset + limitInt - 1);
+
+    // Ejecutar query
+    const { data: productos, error, count } = await query;
+
+    if (error) {
+      console.error("Error al obtener productos:", error.message);
+      throw error;
+    }
+
+    // Calcular metadata de paginación
+    const totalPages = Math.ceil(count / limitInt);
+    const hasNextPage = pageInt < totalPages;
+    const hasPrevPage = pageInt > 1;
+
+    res.json({
+      data: productos,
+      pagination: {
+        current_page: pageInt,
+        per_page: limitInt,
+        total_items: count,
+        total_pages: totalPages,
+        has_next_page: hasNextPage,
+        has_prev_page: hasPrevPage,
+        next_page: hasNextPage ? pageInt + 1 : null,
+        prev_page: hasPrevPage ? pageInt - 1 : null,
+      },
+      filters: {
+        search,
+        categoria_id: categoria_id || "all",
+        activo: activo === "all" ? "all" : activo === "true",
+      },
+    });
+  } catch (error) {
+    console.error("Error en GET /productos:", error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// -------------------- Búsqueda server-side estable --------------------
-router.get("/search", async (req, res) => {
+// GET /productos/:id - Producto específico con todo el detalle
+router.get("/:id", async (req, res) => {
   try {
-    const q = lower(req.query.q || "");
-    const categoriaId = (req.query.categoriaId || "").toString().trim();
-    const limit = Math.min(Number(req.query.limit || 20), 50);
-    const startAfterId = (req.query.startAfter || "").toString().trim();
+    const { id } = req.params;
 
-    let ref = productsCol;
+    const { data: producto, error } = await supabase
+      .from("productos")
+      .select(
+        `
+        *,
+        categorias (id, nombre),
+        variantes_producto (
+          *,
+          inventario_global (
+            cantidad_disponible,
+            cantidad_reservada,
+            minimo_stock
+          )
+        )
+      `
+      )
+      .eq("id", id)
+      .single();
 
-    if (categoriaId) ref = ref.where("categoriaId", "==", categoriaId);
+    if (error) {
+      console.error("Error al obtener producto:", error.message);
+      throw error;
+    }
+    if (!producto)
+      return res.status(404).json({ error: "Producto no encontrado" });
 
-    if (q) {
-      // prefijo por nombreLower
-      ref = ref
-        .where("nombreLower", ">=", q)
-        .where("nombreLower", "<=", q + "\uf8ff");
+    res.json(producto);
+  } catch (error) {
+    console.error("Error en GET /productos/:id:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /productos - Crear producto con sus variantes (OPTIMIZADO)
+router.post("/", requireRole(["admin", "manager"]), async (req, res) => {
+  try {
+    const { producto, variantes } = req.body;
+
+    // Validaciones básicas
+    if (!producto?.nombre || !producto?.precio_base) {
+      return res
+        .status(400)
+        .json({ error: "Nombre y precio_base son requeridos" });
     }
 
-    // orden estable: nombreLower + id
-    ref = ref.orderBy("nombreLower").orderBy("__name__");
+    // Usar transacción para consistencia
+    const { data: nuevoProducto, error: errorProducto } = await supabase
+      .from("productos")
+      .insert([
+        {
+          nombre: producto.nombre,
+          descripcion: producto.descripcion,
+          categoria_id: producto.categoria_id,
+          precio_base: producto.precio_base,
+          marca: producto.marca,
+          activo: producto.activo !== false,
+          imagen_url: producto.imagen_url || null,
+          imagen_thumbnail_url: producto.imagen_thumbnail_url || null,
+        },
+      ])
+      .select()
+      .single();
 
-    if (startAfterId) {
-      const lastSnap = await productsCol.doc(startAfterId).get();
-      if (lastSnap.exists) {
-        const last = lastSnap.data();
-        ref = ref.startAfter(last?.nombreLower || "", lastSnap.id);
+    if (errorProducto) {
+      console.error("Error al crear producto:", errorProducto.message);
+      throw errorProducto;
+    }
+
+    // Crear variantes si existen (en lote)
+    if (variantes && variantes.length > 0) {
+      const variantesConProductoId = variantes.map((variante) => ({
+        producto_id: nuevoProducto.id,
+        sku: variante.sku,
+        atributos: variante.atributos || {},
+        precio: variante.precio || producto.precio_base,
+        costo: variante.costo,
+        activo: variante.activo !== false,
+        imagen_url: variante.imagen_url || null,
+        imagen_thumbnail_url: variante.imagen_thumbnail_url || null,
+      }));
+
+      const { error: errorVariantes } = await supabase
+        .from("variantes_producto")
+        .insert(variantesConProductoId);
+
+      if (errorVariantes) {
+        console.error("Error al crear variantes:", errorVariantes.message);
+        throw errorVariantes;
       }
     }
 
-    const snap = await ref.limit(limit).get();
-    const items = snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        nombre: data.nombre,
-        categoriaId: data.categoriaId || null,
-        categoria: data.categoria || null,
-        precioBase: data.precioBase,
-        imagenes: data.imagenes || [],
-        variantesCount: Array.isArray(data.variantes)
-          ? data.variantes.length
-          : 0,
-      };
-    });
+    // Obtener producto completo con variantes (query optimizada)
+    const { data: productoCompleto, error: errorFinal } = await supabase
+      .from("productos")
+      .select(
+        `
+        *,
+        categorias (id, nombre),
+        variantes_producto (
+          id,
+          sku,
+          atributos,
+          precio,
+          activo,
+          imagen_url,
+          imagen_thumbnail_url,
+          inventario_global (cantidad_disponible)
+        )
+      `
+      )
+      .eq("id", nuevoProducto.id)
+      .single();
 
-    const next = snap.docs.length ? snap.docs[snap.docs.length - 1].id : null;
-    res.json({ success: true, items, next });
-  } catch (e) {
-    console.error("Error en búsqueda:", e);
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
+    if (errorFinal) {
+      console.error("Error al obtener producto completo:", errorFinal.message);
+      throw errorFinal;
+    }
 
-// -------------------- Lookup por barcode --------------------
-router.get("/barcode/:code", async (req, res) => {
-  try {
-    const code = upper(req.params.code || "");
-    if (!code) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Barcode requerido" });
-    }
-    const doc = await barcodesCol.doc(code).get();
-    if (!doc.exists) {
-      return res.status(404).json({ success: false, message: "No encontrado" });
-    }
-    return res.json({ success: true, ...doc.data(), code });
-  } catch (e) {
-    console.error("Error lookup barcode:", e);
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-// -------------------- Lookup por SKU --------------------
-router.get("/sku/:sku", async (req, res) => {
-  try {
-    const sku = lower(req.params.sku || "");
-    if (!sku) {
-      return res.status(400).json({ success: false, message: "SKU requerido" });
-    }
-    const doc = await skusCol.doc(sku).get();
-    if (!doc.exists) {
-      return res.status(404).json({ success: false, message: "No encontrado" });
-    }
-    return res.json({ success: true, ...doc.data(), skuLower: sku });
-  } catch (e) {
-    console.error("Error lookup SKU:", e);
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-// -------------------- Obtener producto por ID --------------------
-router.get("/:id", async (req, res) => {
-  try {
-    const docSnap = await productsCol.doc(req.params.id).get();
-    if (!docSnap.exists) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Producto no encontrado" });
-    }
-    return res.status(200).json({ id: docSnap.id, ...docSnap.data() });
+    res.status(201).json(productoCompleto);
   } catch (error) {
-    console.error("Error obteniendo producto:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al obtener producto",
-      error: error.message,
-    });
+    console.error("Error en POST /productos:", error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// -------------------- Actualizar producto (variantes + barcodes + skus) --------------------
-router.put("/:id", async (req, res) => {
+// GET /productos/search/quick - Búsqueda rápida para TPV (OPTIMIZADA)
+router.get("/search/quick", async (req, res) => {
   try {
+    const { q, limit = 10 } = req.query;
+
+    if (!q) {
+      return res.status(400).json({ error: 'Parámetro "q" requerido' });
+    }
+
+    // Query optimizada para búsqueda en TPV
+    const { data: productos, error } = await supabase
+      .from("productos")
+      .select(
+        `
+        id,
+        nombre,
+        precio_base,
+        imagen_url,
+        imagen_thumbnail_url,
+        categorias (nombre),
+        variantes_producto (
+          id,
+          sku,
+          atributos,
+          precio,
+          imagen_url,
+          imagen_thumbnail_url,
+          inventario_global (cantidad_disponible)
+        )
+      `
+      )
+      .or(`nombre.ilike.%${q}%,sku.ilike.%${q}%`)
+      .eq("activo", true)
+      .limit(parseInt(limit))
+      .order("nombre");
+
+    if (error) {
+      console.error("Error en búsqueda rápida:", error.message);
+      throw error;
+    }
+
+    res.json(productos);
+  } catch (error) {
+    console.error("Error en GET /productos/search/quick:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /productos/stats - Estadísticas de productos
+router.get("/stats/overview", async (req, res) => {
+  try {
+    // Query eficiente para estadísticas
+    const { data: stats, error } = await supabase
+      .from("productos")
+      .select(
+        `
+        id,
+        variantes_producto (
+          inventario_global (cantidad_disponible)
+        )
+      `
+      )
+      .eq("activo", true);
+
+    if (error) {
+      console.error("Error al obtener estadísticas:", error.message);
+      throw error;
+    }
+
+    const totalProductos = stats.length;
+    const totalVariantes = stats.reduce(
+      (acc, producto) => acc + (producto.variantes_producto?.length || 0),
+      0
+    );
+    const totalStock = stats.reduce((acc, producto) => {
+      const stockProducto =
+        producto.variantes_producto?.reduce(
+          (accV, variante) =>
+            accV + (variante.inventario_global?.cantidad_disponible || 0),
+          0
+        ) || 0;
+      return acc + stockProducto;
+    }, 0);
+
+    res.json({
+      total_productos: totalProductos,
+      total_variantes: totalVariantes,
+      total_stock: totalStock,
+      productos_activos: totalProductos,
+    });
+  } catch (error) {
+    console.error("Error en GET /productos/stats/overview:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /productos/:id - Actualizar producto con variantes
+router.put("/:id", requireRole(["admin", "manager"]), async (req, res) => {
+  try {
+    const { id } = req.params;
     const {
       nombre,
       descripcion,
-      categoria,
-      categoriaId,
-      precioBase,
-      tieneVariantes,
-      imagenes,
+      categoria_id,
+      precio_base,
+      marca,
+      activo,
       variantes,
+      aplicarPrecioVariantes, // 👈 Nuevo flag
+      imagen_url,
+      imagen_thumbnail_url,
     } = req.body;
 
-    if (!nombre || !categoria || precioBase == null) {
-      return res.status(400).json({
-        success: false,
-        message: "El nombre, categoría y precioBase son requeridos",
-      });
-    }
-
-    const docRef = productsCol.doc(req.params.id);
-    const docSnap = await docRef.get();
-    if (!docSnap.exists) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Producto no encontrado" });
-    }
-
-    // Verificar duplicado de nombre (excluyendo este ID)
-    const nameSnap = await productsCol.where("nombre", "==", nombre).get();
-    if (!nameSnap.empty && nameSnap.docs.some((d) => d.id !== req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Otro producto con ese nombre ya existe",
-      });
-    }
-
-    const prev = docSnap.data();
-    const nombreLower = lower(nombre);
-    const categoriaLower = lower(categoria);
-    const cleanVariantes = sanitizeVariantes(variantes || [], precioBase);
-
-    const updatedData = {
+    console.log("📝 PUT /productos/:id - Inicio");
+    console.log("   ID del producto:", id);
+    console.log("   Datos recibidos:", {
       nombre,
-      nombreLower,
-      descripcion: descripcion || "",
-      categoria,
-      categoriaLower,
-      categoriaId: categoriaId || null,
-      precioBase,
-      tieneVariantes: !!tieneVariantes,
-      imagenes: imagenes || [],
-      variantes: cleanVariantes,
-      updatedAt: new Date(),
-    };
-
-    await docRef.update(updatedData);
-    await Promise.all([
-      syncBarcodes(docRef.id, cleanVariantes, prev?.variantes || []),
-      syncSkus(docRef.id, cleanVariantes, prev?.variantes || []),
-    ]);
-
-    const updatedSnap = await docRef.get();
-    return res.status(200).json({ id: updatedSnap.id, ...updatedSnap.data() });
-  } catch (error) {
-    console.error("Error actualizando producto:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al actualizar producto",
-      error: error.message,
+      descripcion,
+      categoria_id,
+      precio_base,
+      marca,
+      activo,
     });
+    console.log("   Aplicar precio a variantes:", aplicarPrecioVariantes);
+    console.log("   Variantes recibidas:", variantes?.length || 0, "variantes");
+    if (variantes && variantes.length > 0) {
+      console.log(
+        "   SKUs de variantes:",
+        variantes.map((v) => v.sku)
+      );
+    }
+
+    // Actualizar datos del producto
+    console.log("🔄 Ejecutando UPDATE en productos...");
+    const updatePayload = {
+      nombre,
+      descripcion,
+      categoria_id,
+      precio_base,
+      marca,
+      activo,
+      imagen_url: imagen_url || null,
+      imagen_thumbnail_url: imagen_thumbnail_url || null,
+      updated_at: new Date(),
+    };
+    console.log("   Payload de actualización:", updatePayload);
+
+    const {
+      data: updatedData,
+      error: updateError,
+      count,
+    } = await supabase
+      .from("productos")
+      .update(updatePayload)
+      .eq("id", id)
+      .select();
+
+    console.log("   Respuesta de UPDATE:");
+    console.log("   - Data:", updatedData);
+    console.log("   - Error:", updateError);
+    console.log("   - Count:", count);
+
+    if (updateError) {
+      console.error("❌ Error al actualizar producto:", updateError.message);
+      throw updateError;
+    }
+
+    if (!updatedData || updatedData.length === 0) {
+      console.error(
+        "❌ No se actualizó ningún registro. Posible problema de permisos RLS."
+      );
+      return res.status(404).json({
+        error: "Producto no encontrado o sin permisos para actualizar",
+      });
+    }
+
+    console.log("✅ Producto actualizado correctamente");
+
+    // Si el usuario marcó aplicar precio a todas las variantes
+    if (aplicarPrecioVariantes && precio_base) {
+      console.log("💰 Actualizando precio de todas las variantes...");
+
+      const { data: variantesActualizadas, error: errorPrecioVariantes } =
+        await supabase
+          .from("variantes_producto")
+          .update({ precio: precio_base })
+          .eq("producto_id", id)
+          .select("id");
+
+      if (errorPrecioVariantes) {
+        console.error(
+          "❌ Error al actualizar precios de variantes:",
+          errorPrecioVariantes.message
+        );
+        // No lanzamos error, solo advertimos
+      } else {
+        console.log(
+          `✅ ${
+            variantesActualizadas?.length || 0
+          } variantes actualizadas con nuevo precio: $${precio_base}`
+        );
+      }
+    }
+
+    // Si se enviaron variantes nuevas, crearlas
+    if (variantes && variantes.length > 0) {
+      console.log("🔍 Verificando variantes existentes...");
+
+      // Obtener SKUs existentes para este producto
+      const { data: variantesExistentes } = await supabase
+        .from("variantes_producto")
+        .select("sku")
+        .eq("producto_id", id);
+
+      console.log("   Variantes existentes:", variantesExistentes?.length || 0);
+      console.log(
+        "   SKUs existentes:",
+        variantesExistentes?.map((v) => v.sku) || []
+      );
+
+      const skusExistentes = new Set(
+        variantesExistentes?.map((v) => v.sku) || []
+      );
+
+      // Filtrar solo las variantes que no existen
+      const variantesNuevas = variantes.filter(
+        (v) => !skusExistentes.has(v.sku)
+      );
+
+      console.log("   Variantes nuevas a insertar:", variantesNuevas.length);
+      console.log(
+        "   SKUs nuevos:",
+        variantesNuevas.map((v) => v.sku)
+      );
+
+      if (variantesNuevas.length > 0) {
+        const variantesParaInsertar = variantesNuevas.map((variante) => ({
+          producto_id: id,
+          sku: variante.sku,
+          atributos: variante.atributos || {},
+          precio: variante.precio || precio_base,
+          costo: variante.costo,
+          activo: variante.activo !== false,
+          imagen_url: variante.imagen_url || null,
+          imagen_thumbnail_url: variante.imagen_thumbnail_url || null,
+        }));
+
+        const { error: errorVariantes } = await supabase
+          .from("variantes_producto")
+          .insert(variantesParaInsertar);
+
+        if (errorVariantes) {
+          console.error("❌ Error al crear variantes:", errorVariantes.message);
+          throw errorVariantes;
+        }
+
+        console.log("✅ Variantes insertadas correctamente");
+      } else {
+        console.log(
+          "ℹ️  No hay variantes nuevas para insertar (todas ya existen)"
+        );
+      }
+    } else {
+      console.log("ℹ️  No se enviaron variantes en la petición");
+    }
+
+    console.log("🔍 Obteniendo producto completo actualizado...");
+
+    // Obtener producto completo actualizado con todas las variantes
+    const { data: productoCompleto, error: errorFinal } = await supabase
+      .from("productos")
+      .select(
+        `
+        *,
+        categorias (id, nombre),
+        variantes_producto (
+          id,
+          sku,
+          atributos,
+          precio,
+          costo,
+          activo,
+          imagen_url,
+          imagen_thumbnail_url,
+          inventario_global (cantidad_disponible)
+        )
+      `
+      )
+      .eq("id", id);
+
+    if (errorFinal) {
+      console.error(
+        "❌ Error al obtener producto completo:",
+        errorFinal.message
+      );
+      throw errorFinal;
+    }
+
+    console.log("📦 Producto completo obtenido");
+    console.log(
+      "   Tipo de data:",
+      Array.isArray(productoCompleto) ? "Array" : typeof productoCompleto
+    );
+    console.log(
+      "   Cantidad de elementos:",
+      Array.isArray(productoCompleto) ? productoCompleto.length : "N/A"
+    );
+
+    if (Array.isArray(productoCompleto) && productoCompleto.length > 0) {
+      console.log(
+        "   Variantes en respuesta:",
+        productoCompleto[0]?.variantes_producto?.length || 0
+      );
+    }
+
+    // Retornar el primer (y único) producto
+    const resultado = productoCompleto?.[0] || productoCompleto;
+    console.log("✅ Enviando respuesta al cliente");
+
+    res.json(resultado);
+  } catch (error) {
+    console.error("❌ Error en PUT /productos/:id:", error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// -------------------- Eliminar producto (purga inventario + índices) --------------------
-router.delete("/:id", async (req, res) => {
+// DELETE /productos/:id - Eliminar producto (soft delete)
+router.delete("/:id", requireRole(["admin"]), async (req, res) => {
   try {
-    const productId = req.params.id;
-    const force = String(req.query.force || "0") === "1"; // ?force=1 para forzar
-    const docRef = productsCol.doc(productId);
-    const docSnap = await docRef.get();
+    const { id } = req.params;
 
-    if (!docSnap.exists) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Producto no encontrado" });
+    // Soft delete en lugar de eliminar físicamente
+    const { data: producto, error } = await supabase
+      .from("productos")
+      .update({
+        activo: false,
+        updated_at: new Date(),
+      })
+      .eq("id", id)
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("Error al desactivar producto:", error.message);
+      throw error;
     }
+    if (!producto)
+      return res.status(404).json({ error: "Producto no encontrado" });
 
-    const data = docSnap.data();
-    const variantes = Array.isArray(data.variantes) ? data.variantes : [];
-
-    // (A) Bloquear borrado si hay stock > 0 (a menos que ?force=1)
-    const idxByProduct = await invIdxCol
-      .where("productId", "==", productId)
-      .get();
-    const anyWithStock = idxByProduct.docs.some(
-      (d) => Number(d.data()?.stock || 0) > 0
-    );
-
-    if (anyWithStock && !force) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Este producto tiene stock en una o más tiendas. " +
-          "Mueve/ajusta stock antes de borrar, o usa ?force=1 para purgar el inventario relacionado.",
-      });
-    }
-
-    // (B) Purga de inventario asociado (agg/index/tiendas/*/inventario)
-    for (const v of variantes) {
-      if (!v?.id) continue;
-      await purgeVariantFromInventory(v.id);
-    }
-
-    // (C) Limpiar índices de códigos (barcodes/skus) y (D) eliminar el producto
-    const batch = db.batch();
-    for (const v of variantes) {
-      if (v?.barcode) batch.delete(barcodesCol.doc(upper(v.barcode)));
-      if (v?.sku) batch.delete(skusCol.doc(lower(v.sku)));
-    }
-    batch.delete(docRef);
-    await batch.commit();
-
-    return res.json({
-      success: true,
-      message: anyWithStock
-        ? "Producto y todo su inventario asociado purgado (force=1)."
-        : "Producto eliminado correctamente (sin stock).",
+    res.json({
+      message: "Producto desactivado correctamente",
+      id: producto.id,
     });
   } catch (error) {
-    console.error("Error eliminando producto con purga:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al eliminar producto",
-      error: error.message,
-    });
+    console.error("Error en DELETE /productos/:id:", error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 

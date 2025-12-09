@@ -1,303 +1,338 @@
-// functions/routes/tiendasRouter.js
+// functions/routes/tiendaRouter.js
 import express from "express";
-import { db } from "../admin.js";
+import { supabase } from "../config/supabase.js";
+import {
+  authenticateToken,
+  requireRole,
+} from "../middlewares/authMiddleware.js";
+import { FALSE } from "sass";
 
 const router = express.Router();
-const collection = db.collection("tiendas");
 
-// Crear una nueva tienda
-router.post("/", async (req, res) => {
-  try {
-    const { nombre, direccion = "", ...otrosCampos } = req.body;
-    if (!nombre) {
-      return res
-        .status(400)
-        .json({ success: false, message: "El nombre es obligatorio" });
+// Crear tienda
+router.post(
+  "/",
+  authenticateToken,
+  requireRole(["admin"]),
+  async (req, res) => {
+    try {
+      const { nombre, direccion, telefono } = req.body;
+
+      if (!nombre) {
+        return res.status(400).json({
+          success: false,
+          message: "El nombre de la tienda es requerido",
+        });
+      }
+
+      // Verificar duplicados por nombre
+      const { data: tiendaExistente } = await supabase
+        .from("tiendas")
+        .select("id")
+        .eq("nombre", nombre)
+        .single();
+
+      if (tiendaExistente) {
+        return res.status(400).json({
+          success: false,
+          message: "La tienda ya existe",
+        });
+      }
+
+      // Crear nueva tienda
+      const { data: nuevaTienda, error: errorInsertar } = await supabase
+        .from("tiendas")
+        .insert([
+          {
+            nombre: nombre,
+            direccion: direccion || "",
+            telefono: telefono || "",
+            activa: true,
+          },
+        ])
+        .select()
+        .single();
+
+      if (errorInsertar) throw errorInsertar;
+
+      return res.status(201).json({
+        success: true,
+        data: nuevaTienda,
+      });
+    } catch (error) {
+      console.error("Error creando tienda:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Error al crear tienda",
+        error: error.message,
+      });
     }
-    const now = new Date();
-    const data = {
-      nombre,
-      direccion,
-      ...otrosCampos,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const docRef = await collection.add(data);
-    const snap = await docRef.get();
-    return res.status(201).json({ id: snap.id, ...snap.data() });
-  } catch (error) {
-    console.error("Error registrando tienda:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al registrar la tienda",
-      error: error.message,
-    });
   }
-});
+);
 
-// Listar todas las tiendas
-router.get("/", async (_req, res) => {
+// Listar tiendas
+router.get("/", authenticateToken, async (req, res) => {
   try {
-    const snap = await collection.get();
-    const tiendas = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    return res.status(200).json(tiendas);
+    const { activa } = req.query;
+
+    let query = supabase.from("tiendas").select("*").order("nombre");
+
+    // Filtrar por estado si se especifica
+    if (activa !== undefined) {
+      query = query.eq("activa", activa === "true");
+    }
+
+    const { data: tiendas, error } = await query;
+
+    if (error) throw error;
+
+    return res.status(200).json({
+      success: true,
+      data: tiendas,
+    });
   } catch (error) {
     console.error("Error obteniendo tiendas:", error);
     return res.status(500).json({
       success: false,
-      message: "Error al obtener la lista de tiendas",
+      message: "Error al obtener tiendas",
       error: error.message,
     });
   }
 });
 
-// Obtener una tienda por ID
-router.get("/:id", async (req, res) => {
+// Obtener tienda por ID
+router.get("/:id", authenticateToken, async (req, res) => {
   try {
-    const snap = await collection.doc(req.params.id).get();
-    if (!snap.exists) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Tienda no encontrada" });
+    const { id } = req.params;
+
+    const { data: tienda, error } = await supabase
+      .from("tiendas")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        return res.status(404).json({
+          success: false,
+          message: "Tienda no encontrada",
+        });
+      }
+      throw error;
     }
-    return res.status(200).json({ id: snap.id, ...snap.data() });
+
+    return res.status(200).json({
+      success: true,
+      data: tienda,
+    });
   } catch (error) {
     console.error("Error obteniendo tienda:", error);
     return res.status(500).json({
       success: false,
-      message: "Error al obtener la tienda",
+      message: "Error al obtener tienda",
       error: error.message,
     });
   }
 });
 
-// Actualizar una tienda por ID
-router.put("/:id", async (req, res) => {
-  try {
-    const { nombre, direccion = "", ...otrosCampos } = req.body;
-    if (!nombre) {
-      return res
-        .status(400)
-        .json({ success: false, message: "El nombre es obligatorio" });
-    }
-    const docRef = collection.doc(req.params.id);
-    const existing = await docRef.get();
-    if (!existing.exists) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Tienda no encontrada" });
-    }
-    const updatedData = {
-      nombre,
-      direccion,
-      ...otrosCampos,
-      updatedAt: new Date(),
-    };
-    await docRef.update(updatedData);
-    const updatedSnap = await docRef.get();
-    return res.status(200).json({ id: updatedSnap.id, ...updatedSnap.data() });
-  } catch (error) {
-    console.error("Error actualizando tienda:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al actualizar la tienda",
-      error: error.message,
-    });
-  }
-});
+// Actualizar tienda
+router.put(
+  "/:id",
+  authenticateToken,
+  requireRole(["admin", "manager"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nombre, direccion, telefono, activa } = req.body;
 
-// Eliminar una tienda por ID
-router.delete("/:id", async (req, res) => {
-  try {
-    const docRef = collection.doc(req.params.id);
-    const existing = await docRef.get();
-    if (!existing.exists) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Tienda no encontrada" });
-    }
-    await docRef.delete();
-    return res
-      .status(200)
-      .json({ success: true, message: "Tienda eliminada exitosamente" });
-  } catch (error) {
-    console.error("Error eliminando tienda:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al eliminar la tienda",
-      error: error.message,
-    });
-  }
-});
+      // Si solo se está cambiando el estado activa, no requerir nombre
+      if (!nombre && activa === undefined) {
+        return res.status(400).json({
+          success: false,
+          message: "Debe proporcionar al menos un campo para actualizar",
+        });
+      }
 
-/** Helper para escribir logs en subcolección */
-const logOperacion = async ({
-  tiendaId,
-  inventarioId,
-  productoId,
-  varianteId,
-  anterior,
-  nueva,
-  tipo, // 'CREAR' | 'ACTUALIZAR'
-  usuario = "sistema",
-}) => {
-  const logRef = db
-    .collection("tiendas")
-    .doc(tiendaId)
-    .collection("logs_inventario")
-    .doc();
-  await logRef.set({
-    tipoOperacion: tipo,
-    inventarioId,
-    productoId,
-    varianteId,
-    cambio: { anterior, nueva },
-    usuario,
-    timestamp: new Date(),
-  });
-};
+      // Verificar que la tienda existe
+      const { data: tiendaExistente } = await supabase
+        .from("tiendas")
+        .select("*")
+        .eq("id", id)
+        .single();
 
-/**
- * POST /api/tiendas/:tiendaId/inventario
- */
-router.post("/:tiendaId/inventario", async (req, res) => {
-  try {
-    const { tiendaId } = req.params;
-    const { productoId, varianteId, cantidad = 0, minimoStock = 1 } = req.body;
-    if (!productoId || !varianteId) {
-      return res.status(400).json({
+      if (!tiendaExistente) {
+        return res.status(404).json({
+          success: false,
+          message: "Tienda no encontrada",
+        });
+      }
+
+      // Verificar duplicados solo si se está cambiando el nombre
+      if (nombre && nombre !== tiendaExistente.nombre) {
+        const { data: duplicado } = await supabase
+          .from("tiendas")
+          .select("id")
+          .eq("nombre", nombre)
+          .neq("id", id)
+          .single();
+
+        if (duplicado) {
+          return res.status(400).json({
+            success: false,
+            message: "Ya existe otra tienda con ese nombre",
+          });
+        }
+      }
+
+      // Preparar datos para actualizar
+      const updateData = {
+        updated_at: new Date(),
+      };
+
+      if (nombre !== undefined) updateData.nombre = nombre;
+      if (direccion !== undefined) updateData.direccion = direccion || "";
+      if (telefono !== undefined) updateData.telefono = telefono || "";
+      if (activa !== undefined) updateData.activa = activa;
+
+      // Actualizar tienda
+      const { data: tiendaActualizada, error: errorActualizar } = await supabase
+        .from("tiendas")
+        .update(updateData)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (errorActualizar) throw errorActualizar;
+
+      return res.status(200).json({
+        success: true,
+        data: tiendaActualizada,
+      });
+    } catch (error) {
+      console.error("Error actualizando tienda:", error);
+      return res.status(500).json({
         success: false,
-        message: "productoId y varianteId son requeridos",
+        message: "Error al actualizar tienda",
+        error: error.message,
       });
     }
-    const now = new Date();
-    const invRef = db
-      .collection("tiendas")
-      .doc(tiendaId)
-      .collection("inventario")
-      .doc();
-    await invRef.set({
-      productoId,
-      varianteId,
-      stock: cantidad,
-      minimoStock,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Log
-    await logOperacion({
-      tiendaId,
-      inventarioId: invRef.id,
-      productoId,
-      varianteId,
-      anterior: 0,
-      nueva: cantidad,
-      tipo: "CREAR",
-      usuario: req.user?.uid,
-    });
-
-    return res.status(201).json({ success: true, id: invRef.id });
-  } catch (error) {
-    console.error("Error agregando inventario:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al agregar inventario",
-      error: error.message,
-    });
   }
-});
+);
 
-/**
- * PUT /api/:tiendaId/inventario/:invId
- * Actualiza stock y mínimo, registra log
- */
-router.put("/:tiendaId/inventario/:invId", async (req, res) => {
-  try {
-    const { tiendaId, invId } = req.params;
-    const { stock, minimoStock } = req.body;
-    const now = new Date();
-    const invRef = db
-      .collection("tiendas")
-      .doc(tiendaId)
-      .collection("inventario")
-      .doc(invId);
-    const snap = await invRef.get();
-    if (!snap.exists)
-      return res
-        .status(404)
-        .json({ success: false, message: "Inventario no encontrado" });
-    const anterior = snap.data().stock;
-    await invRef.update({ stock, minimoStock, updatedAt: now });
+// Desactivar tienda (soft delete)
+router.patch(
+  "/:id/desactivar",
+  authenticateToken,
+  requireRole(["admin"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-    // Log
-    await logOperacion({
-      tiendaId,
-      inventarioId: invId,
-      productoId: snap.data().productoId,
-      varianteId: snap.data().varianteId,
-      anterior,
-      nueva: stock,
-      tipo: "ACTUALIZAR",
-      usuario: req.user?.uid,
-    });
+      // Verificar que la tienda existe
+      const { data: tiendaExistente, error: errorBuscar } = await supabase
+        .from("tiendas")
+        .select("*")
+        .eq("id", id);
 
-    return res.json({ success: true });
-  } catch (error) {
-    console.error("Error actualizando inventario:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al actualizar inventario",
-      error: error.message,
-    });
+      if (errorBuscar) throw errorBuscar;
+
+      if (!tiendaExistente || tiendaExistente.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Tienda no encontrada",
+        });
+      }
+
+      // Desactivar tienda
+      const { data: tiendaDesactivada, error: errorActualizar } = await supabase
+        .from("tiendas")
+        .update({
+          activa: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select();
+
+      if (errorActualizar) throw errorActualizar;
+
+      if (!tiendaDesactivada || tiendaDesactivada.length === 0) {
+        return res.status(500).json({
+          success: false,
+          message: "No se pudo desactivar la tienda",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: tiendaDesactivada[0],
+        message: "Tienda desactivada exitosamente",
+      });
+    } catch (error) {
+      console.error("Error desactivando tienda:", error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Error al desactivar tienda",
+      });
+    }
   }
-});
+);
 
-/**
- * GET /api/:tiendaId/inventario
- * ?productoId=...
- */
-router.get("/:tiendaId/inventario", async (req, res) => {
-  try {
-    const { tiendaId } = req.params;
-    const { productoId } = req.query;
-    let ref = db.collection("tiendas").doc(tiendaId).collection("inventario");
-    if (productoId) ref = ref.where("productoId", "==", productoId);
-    const snap = await ref.get();
-    const inventario = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    return res.json({ success: true, inventario });
-  } catch (error) {
-    console.error("Error obteniendo inventario:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al obtener inventario",
-      error: error.message,
-    });
-  }
-});
+// Reactivar tienda
+router.patch(
+  "/:id/reactivar",
+  authenticateToken,
+  requireRole(["admin"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-/**
- * GET /api/:tiendaId/logs_inventario
- */
-router.get("/:tiendaId/logs_inventario", async (req, res) => {
-  try {
-    const { tiendaId } = req.params;
-    const snap = await db
-      .collection("tiendas")
-      .doc(tiendaId)
-      .collection("logs_inventario")
-      .orderBy("timestamp", "desc")
-      .get();
-    const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    return res.json({ success: true, logs });
-  } catch (error) {
-    console.error("Error obteniendo logs de inventario:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error al obtener logs",
-      error: error.message,
-    });
+      // Verificar que la tienda existe
+      const { data: tiendaExistente, error: errorBuscar } = await supabase
+        .from("tiendas")
+        .select("*")
+        .eq("id", id);
+
+      if (errorBuscar) throw errorBuscar;
+
+      if (!tiendaExistente || tiendaExistente.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Tienda no encontrada",
+        });
+      }
+
+      // Reactivar tienda
+      const { data: tiendaReactivada, error: errorActualizar } = await supabase
+        .from("tiendas")
+        .update({
+          activa: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select();
+
+      if (errorActualizar) throw errorActualizar;
+
+      if (!tiendaReactivada || tiendaReactivada.length === 0) {
+        return res.status(500).json({
+          success: false,
+          message: "No se pudo reactivar la tienda",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: tiendaReactivada[0],
+        message: "Tienda reactivada exitosamente",
+      });
+    } catch (error) {
+      console.error("Error reactivando tienda:", error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Error al reactivar tienda",
+      });
+    }
   }
-});
+);
 
 export default router;

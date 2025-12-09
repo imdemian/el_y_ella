@@ -1,604 +1,958 @@
-// routers/inventario.router.js
+// functions/routes_copy/inventarioRouter.js
 import express from "express";
-import admin from "firebase-admin";
-import { db } from "../admin.js";
+import { supabaseAdmin as supabase } from "../config/supabase.js";
+import {
+  authenticateToken,
+  requireRole,
+} from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
-const { FieldValue } = admin.firestore;
 
-// Colecciones
-const storesCol = db.collection("tiendas");
-const invAggCol = db.collection("inventoryAgg");
-const invIdxCol = db.collection("inventoryIndex");
-const productsCol = db.collection("productos");
+// Aplicar autenticación a todas las rutas
+router.use(authenticateToken);
 
-// Utils
-const toStr = (v) => (v == null ? "" : String(v));
-const norm = (s) => toStr(s).trim();
-const lower = (s) => norm(s).toLowerCase();
-const upper = (s) => norm(s).toUpperCase();
-
-async function getProductAndVariant(productId, variantId) {
-  const prodSnap = await productsCol.doc(productId).get();
-  if (!prodSnap.exists) throw new Error("Producto no encontrado");
-  const prod = prodSnap.data();
-  const variant = (prod.variantes || []).find((v) => v.id === variantId);
-  if (!variant) throw new Error("Variante no encontrada en producto");
-  return { prod, variant };
-}
-
-function upsertInventoryIndicesTx(
-  tx,
-  { storeId, productId, prod, variant, oldStock, newStock, newMin }
-) {
-  const now = new Date();
-  const delta = Number(newStock) - Number(oldStock || 0);
-
-  // inventoryAgg/{variantId} (agregado global)
-  const aggRef = invAggCol.doc(variant.id);
-  tx.set(
-    aggRef,
-    {
-      productId,
-      variantId: variant.id,
-      sku: norm(variant.sku || "") || null,
-      barcode: upper(variant.barcode || "") || null,
-      attrs: variant.atributos || {},
-
-      // Denormalizados para UI/filtros
-      productName: toStr(prod.nombre || ""),
-      productNameLower: toStr(prod.nombreLower || ""),
-      category: toStr(prod.categoria || ""),
-      categoryId: prod.categoriaId || null,
-      categoryLower: toStr(prod.categoriaLower || ""),
-
-      totalStock: FieldValue.increment(delta),
-      stores: {
-        [storeId]: { stock: newStock, min: newMin, updatedAt: now },
-      },
-      updatedAt: now,
-    },
-    { merge: true }
-  );
-
-  // inventoryIndex/{variantId}_{storeId} (vista por tienda)
-  const idxRef = invIdxCol.doc(`${variant.id}_${storeId}`);
-  const isLowStock = Number(newStock) <= Number(newMin || 0);
-  tx.set(
-    idxRef,
-    {
-      variantId: variant.id,
-      productId,
-      storeId,
-      stock: newStock,
-      min: newMin,
-      isLowStock,
-
-      // Denormalizados para UI/filtros
-      sku: norm(variant.sku || "") || null,
-      barcode: upper(variant.barcode || "") || null,
-      productName: toStr(prod.nombre || ""),
-      productNameLower: toStr(prod.nombreLower || ""),
-      category: toStr(prod.categoria || ""),
-      categoryId: prod.categoriaId || null,
-      categoryLower: toStr(prod.categoriaLower || ""),
-      updatedAt: now,
-    },
-    { merge: true }
-  );
-}
-
-function addStoreLogTx(tx, { storeId, payload }) {
-  const logRef = storesCol.doc(storeId).collection("inventarioLogs").doc();
-  tx.set(logRef, payload);
-}
-
-async function getStartAfterSnap(refCol, startAfterId) {
-  if (!startAfterId) return null;
-  const snap = await refCol.doc(startAfterId).get();
-  return snap.exists ? snap : null;
-}
-
-/* ======================= LECTURAS ======================= */
+/* ======================= INVENTARIO GLOBAL ======================= */
 
 /**
  * GET /inventario/global
- * ?limit,&startAfter,&q,&categoryId,&sku,&barcode,&variantId,&includeStores=1
+ * Obtener inventario global con filtros
  */
 router.get("/global", async (req, res) => {
   try {
     const {
+      page = 1,
       limit = 50,
-      startAfter,
-      q = "",
-      categoryId = "",
-      sku = "",
-      barcode = "",
-      variantId = "",
-      includeStores = "0",
+      search = "",
+      categoria_id,
+      bajo_minimo = false,
+      sin_stock = false,
     } = req.query;
 
-    let ref = invAggCol;
-    let usesRange = false;
+    const pageInt = parseInt(page);
+    const limitInt = parseInt(limit);
+    const offset = (pageInt - 1) * limitInt;
 
-    if (variantId) ref = ref.where("variantId", "==", variantId);
-    if (sku) ref = ref.where("sku", "==", norm(sku));
-    if (barcode) ref = ref.where("barcode", "==", upper(barcode));
-    if (categoryId) ref = ref.where("categoryId", "==", categoryId);
-
-    const qLower = lower(q);
-    if (qLower) {
-      ref = ref
-        .where("productNameLower", ">=", qLower)
-        .where("productNameLower", "<=", qLower + "\uf8ff")
-        .orderBy("productNameLower");
-      usesRange = true;
-    }
-    if (!usesRange) ref = ref.orderBy("updatedAt", "desc");
-
-    const startSnap = await getStartAfterSnap(invAggCol, startAfter);
-    if (startSnap) ref = ref.startAfter(startSnap);
-
-    const snap = await ref.limit(Number(limit)).get();
-    let items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-    if (includeStores !== "1") {
-      items = items.map(({ stores, ...rest }) => rest);
-    }
-
-    const nextStartAfter = snap.docs.length
-      ? snap.docs[snap.docs.length - 1].id
-      : null;
-
-    res.json({ success: true, items, nextStartAfter });
-  } catch (e) {
-    console.error("Error GET /inventario/global:", e);
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-/**
- * GET /inventario/tienda
- * ?storeId,&limit,&startAfter,&q,&categoryId,&lowStock=1,&sku,&barcode,&variantId
- */
-router.get("/tienda", async (req, res) => {
-  try {
-    const {
-      storeId,
-      limit = 50,
-      startAfter,
-      q = "",
-      categoryId = "",
-      lowStock = "0",
-      sku = "",
-      barcode = "",
-      variantId = "",
-    } = req.query;
-
-    if (!storeId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "storeId es requerido" });
-    }
-
-    let ref = invIdxCol.where("storeId", "==", storeId);
-    let usesRange = false;
-
-    if (variantId) ref = ref.where("variantId", "==", variantId);
-    if (sku) ref = ref.where("sku", "==", norm(sku));
-    if (barcode) ref = ref.where("barcode", "==", upper(barcode));
-    if (categoryId) ref = ref.where("categoryId", "==", categoryId);
-    if (lowStock === "1") ref = ref.where("isLowStock", "==", true);
-
-    const qLower = lower(q);
-    if (qLower) {
-      ref = ref
-        .where("productNameLower", ">=", qLower)
-        .where("productNameLower", "<=", qLower + "\uf8ff")
-        .orderBy("productNameLower");
-      usesRange = true;
-    }
-    if (!usesRange) ref = ref.orderBy("updatedAt", "desc");
-
-    const startSnap = await getStartAfterSnap(invIdxCol, startAfter);
-    if (startSnap) ref = ref.startAfter(startSnap);
-
-    const snap = await ref.limit(Number(limit)).get();
-    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-    const nextStartAfter = snap.docs.length
-      ? snap.docs[snap.docs.length - 1].id
-      : null;
-
-    res.json({ success: true, items, nextStartAfter });
-  } catch (e) {
-    console.error("Error GET /inventario/tienda:", e);
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-/**
- * GET /inventario/producto/:productId        (AGREGADO global por producto)
- * ?limit,&startAfter,&includeStores=1
- */
-router.get("/producto/:productId", async (req, res) => {
-  try {
-    const { productId } = req.params;
-    const limit = Number(req.query.limit || 50);
-    const startAfterId = req.query.startAfter || null;
-    const includeStores = req.query.includeStores === "1";
-
-    let ref = invAggCol
-      .where("productId", "==", productId)
-      .orderBy("updatedAt", "desc");
-
-    if (startAfterId) {
-      const lastSnap = await invAggCol.doc(startAfterId).get();
-      if (lastSnap.exists) ref = ref.startAfter(lastSnap);
-    }
-
-    const snap = await ref.limit(limit).get();
-    const items = snap.docs.map((d) => {
-      const data = d.data() || {};
-      if (!includeStores) {
-        const { stores, ...rest } = data;
-        return { id: d.id, ...rest };
-      }
-      return { id: d.id, ...data };
-    });
-
-    const next = snap.docs.length ? snap.docs[snap.docs.length - 1].id : null;
-    return res.json({ success: true, items, next });
-  } catch (e) {
-    console.error("Error inventario por producto (global):", e);
-    return res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-/**
- * GET /inventario/tienda/producto/:productId (ÍNDICE por tienda de ese producto)
- * ?storeId=...,&limit,&startAfter,&lowStock=1
- */
-router.get("/tienda/producto/:productId", async (req, res) => {
-  try {
-    const { productId } = req.params;
-    const storeId = req.query.storeId;
-    if (!storeId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "storeId es requerido" });
-    }
-
-    const limit = Number(req.query.limit || 50);
-    const startAfterId = req.query.startAfter || null;
-    const lowStock = req.query.lowStock === "1";
-
-    let ref = invIdxCol
-      .where("productId", "==", productId)
-      .where("storeId", "==", storeId);
-
-    if (lowStock) ref = ref.where("isLowStock", "==", true);
-    ref = ref.orderBy("updatedAt", "desc");
-
-    if (startAfterId) {
-      const lastSnap = await invIdxCol.doc(startAfterId).get();
-      if (lastSnap.exists) ref = ref.startAfter(lastSnap);
-    }
-
-    const snap = await ref.limit(limit).get();
-    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const next = snap.docs.length ? snap.docs[snap.docs.length - 1].id : null;
-
-    return res.json({ success: true, items, next });
-  } catch (e) {
-    console.error("Error inventario por producto (tienda):", e);
-    return res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-/**
- * GET /inventario/variante/:variantId  (ficha agregada puntual)
- */
-router.get("/variante/:variantId", async (req, res) => {
-  try {
-    const snap = await invAggCol.doc(req.params.variantId).get();
-    if (!snap.exists)
-      return res.status(404).json({ success: false, message: "No encontrado" });
-    res.json({ success: true, id: snap.id, ...snap.data() });
-  } catch (e) {
-    console.error("Error GET /inventario/variante/:variantId:", e);
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-/* ======================= ESCRITURAS ======================= */
-
-/**
- * POST /inventario/transfer
- * { productId, variantId, fromStoreId, toStoreId, quantity, motivo? }
- */
-router.post("/transfer", async (req, res) => {
-  try {
-    const {
-      productId,
-      variantId,
-      fromStoreId,
-      toStoreId,
-      quantity,
-      motivo = "transferencia",
-    } = req.body;
-
-    const qty = Number(quantity);
-    if (!productId || !variantId || !fromStoreId || !toStoreId || !qty) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "productId, variantId, fromStoreId, toStoreId y quantity son requeridos",
-      });
-    }
-    if (fromStoreId === toStoreId)
-      return res
-        .status(400)
-        .json({ success: false, message: "Las tiendas deben ser distintas" });
-    if (qty <= 0)
-      return res
-        .status(400)
-        .json({ success: false, message: "quantity debe ser > 0" });
-
-    const { prod, variant } = await getProductAndVariant(productId, variantId);
-
-    const fromRef = storesCol
-      .doc(fromStoreId)
-      .collection("inventario")
-      .doc(variantId);
-    const toRef = storesCol
-      .doc(toStoreId)
-      .collection("inventario")
-      .doc(variantId);
-
-    const correlationId = db.collection("_").doc().id;
-    const now = new Date();
-
-    await db.runTransaction(async (tx) => {
-      const [fromSnap, toSnap] = await Promise.all([
-        tx.get(fromRef),
-        tx.get(toRef),
-      ]);
-      const fromPrev = fromSnap.exists
-        ? fromSnap.data()
-        : { stock: 0, minimoStock: 0 };
-      const toPrev = toSnap.exists
-        ? toSnap.data()
-        : { stock: 0, minimoStock: 0 };
-
-      if (Number(fromPrev.stock) < qty) {
-        throw new Error("Stock insuficiente en tienda origen");
-      }
-
-      const fromNewStock = Number(fromPrev.stock) - qty;
-      const toNewStock = Number(toPrev.stock) + qty;
-
-      // Fuente de verdad por tienda
-      tx.set(
-        fromRef,
-        {
-          productoId: productId,
-          varianteId: variantId,
-          stock: fromNewStock,
-          minimoStock: Number(fromPrev.minimoStock || 0),
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-      tx.set(
-        toRef,
-        {
-          productoId: productId,
-          varianteId: variantId,
-          stock: toNewStock,
-          minimoStock: Number(toPrev.minimoStock || 0),
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-
-      // Índices/agg
-      upsertInventoryIndicesTx(tx, {
-        storeId: fromStoreId,
-        productId,
-        prod,
-        variant,
-        oldStock: fromPrev.stock || 0,
-        newStock: fromNewStock,
-        newMin: Number(fromPrev.minimoStock || 0),
-      });
-      upsertInventoryIndicesTx(tx, {
-        storeId: toStoreId,
-        productId,
-        prod,
-        variant,
-        oldStock: toPrev.stock || 0,
-        newStock: toNewStock,
-        newMin: Number(toPrev.minimoStock || 0),
-      });
-
-      // Logs
-      addStoreLogTx(tx, {
-        storeId: fromStoreId,
-        payload: {
-          timestamp: now,
-          tipoOperacion: "transfer_out",
-          correlacion: correlationId,
-          varianteId: variantId,
-          productoId: productId,
-          cantidad: qty,
-          stockPrevio: fromPrev.stock,
-          stockNuevo: fromNewStock,
-          motivo,
-        },
-      });
-      addStoreLogTx(tx, {
-        storeId: toStoreId,
-        payload: {
-          timestamp: now,
-          tipoOperacion: "transfer_in",
-          correlacion: correlationId,
-          varianteId: variantId,
-          productoId: productId,
-          cantidad: qty,
-          stockPrevio: toPrev.stock,
-          stockNuevo: toNewStock,
-          motivo,
-        },
-      });
-    });
-
-    res.json({ success: true, message: "Transferencia realizada" });
-  } catch (e) {
-    console.error("Error POST /inventario/transfer:", e);
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-/**
- * PUT /inventario/tiendas/:storeId/variantes/:variantId
- * Body: { productId, stock, minimoStock }
- */
-router.put("/tiendas/:storeId/variantes/:variantId", async (req, res) => {
-  try {
-    const { storeId, variantId } = req.params;
-    const { productId, stock, minimoStock } = req.body;
-
-    if (!productId || stock == null || minimoStock == null) {
-      return res.status(400).json({
-        success: false,
-        message: "productId, stock y minimoStock son requeridos",
-      });
-    }
-
-    const { prod, variant } = await getProductAndVariant(productId, variantId);
-    const invRef = storesCol
-      .doc(storeId)
-      .collection("inventario")
-      .doc(variantId);
-
-    await db.runTransaction(async (tx) => {
-      const prevSnap = await tx.get(invRef);
-      const prev = prevSnap.exists
-        ? prevSnap.data()
-        : { stock: 0, minimoStock: 0 };
-
-      const newStock = Number(stock);
-      const newMin = Number(minimoStock);
-      const now = new Date();
-
-      // Fuente de verdad por tienda
-      tx.set(
-        invRef,
-        {
-          productoId: productId,
-          varianteId: variantId,
-          stock: newStock,
-          minimoStock: newMin,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-
-      // Índices/agg
-      upsertInventoryIndicesTx(tx, {
-        storeId,
-        productId,
-        prod,
-        variant,
-        oldStock: Number(prev.stock || 0),
-        newStock,
-        newMin,
-      });
-
-      // Log
-      addStoreLogTx(tx, {
-        storeId,
-        payload: {
-          timestamp: now,
-          tipoOperacion: "set_stock",
-          varianteId: variantId,
-          productoId: productId,
-          stockPrevio: prev.stock || 0,
-          stockNuevo: newStock,
-          minimoPrevio: prev.minimoStock || 0,
-          minimoNuevo: newMin,
-        },
-      });
-    });
-
-    res.json({ success: true, message: "Inventario actualizado" });
-  } catch (e) {
-    console.error(
-      "Error PUT /inventario/tiendas/:storeId/variantes/:variantId:",
-      e
+    // Query base
+    let query = supabase.from("inventario_global").select(
+      `
+        *,
+        variantes_producto (
+          id,
+          sku,
+          atributos,
+          precio,
+          activo,
+          productos (
+            id,
+            nombre,
+            categoria_id,
+            categorias (id, nombre)
+          )
+        )
+      `,
+      { count: "exact" }
     );
-    res.status(500).json({ success: false, message: e.message });
+
+    // Filtros
+    if (bajo_minimo === "true" || bajo_minimo === true) {
+      // Stock por debajo del mínimo usando SQL
+      query = query.filter("cantidad_disponible", "lt", "minimo_stock");
+    }
+
+    if (sin_stock === "true" || sin_stock === true) {
+      query = query.eq("cantidad_disponible", 0);
+    }
+
+    // Ordenamiento y paginación
+    query = query
+      .order("updated_at", { ascending: false })
+      .range(offset, offset + limitInt - 1);
+
+    const { data: inventario, error, count } = await query;
+
+    if (error) {
+      console.error("Error al obtener inventario global:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    // Filtrar por búsqueda y categoría en memoria (porque las relaciones no soportan filtros directos)
+    let resultados = inventario;
+
+    if (search) {
+      const searchLower = search.toLowerCase();
+      resultados = resultados.filter(
+        (item) =>
+          item.variantes_producto?.sku?.toLowerCase().includes(searchLower) ||
+          item.variantes_producto?.productos?.nombre
+            ?.toLowerCase()
+            .includes(searchLower)
+      );
+    }
+
+    if (categoria_id) {
+      resultados = resultados.filter(
+        (item) =>
+          item.variantes_producto?.productos?.categoria_id ===
+          parseInt(categoria_id)
+      );
+    }
+
+    res.json({
+      data: resultados,
+      pagination: {
+        current_page: pageInt,
+        per_page: limitInt,
+        total_items: count,
+        total_pages: Math.ceil(count / limitInt),
+      },
+    });
+  } catch (error) {
+    console.error("Error en GET /inventario/global:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
 /**
- * GET /inventario/distribucion/:variantId
+ * GET /inventario/global/:variante_id
+ * Obtener inventario global de una variante específica
+ */
+router.get("/global/:variante_id", async (req, res) => {
+  try {
+    const { variante_id } = req.params;
+
+    const { data, error } = await supabase
+      .from("inventario_global")
+      .select(
+        `
+        *,
+        variantes_producto (
+          id,
+          sku,
+          atributos,
+          precio,
+          productos (id, nombre)
+        )
+      `
+      )
+      .eq("variante_id", variante_id)
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        return res
+          .status(404)
+          .json({ error: "Inventario no encontrado para esta variante" });
+      }
+      console.error("Error al obtener inventario:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error("Error en GET /inventario/global/:variante_id:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /inventario/global/:variante_id
+ * Actualizar inventario global (solo admin/manager)
+ */
+router.put(
+  "/global/:variante_id",
+  requireRole(["admin", "manager"]),
+  async (req, res) => {
+    try {
+      const { variante_id } = req.params;
+      const { cantidad_disponible, minimo_stock } = req.body;
+
+      const updateData = {};
+      if (cantidad_disponible !== undefined)
+        updateData.cantidad_disponible = parseInt(cantidad_disponible);
+      if (minimo_stock !== undefined)
+        updateData.minimo_stock = parseInt(minimo_stock);
+
+      const { data, error } = await supabase
+        .from("inventario_global")
+        .update(updateData)
+        .eq("variante_id", variante_id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error al actualizar inventario:", error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json({
+        message: "Inventario actualizado correctamente",
+        data,
+      });
+    } catch (error) {
+      console.error("Error en PUT /inventario/global/:variante_id:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+/* ======================= INVENTARIO POR TIENDA ======================= */
+
+/**
+ * GET /inventario/tienda/:tienda_id
+ * Obtener inventario de una tienda específica
+ */
+router.get("/tienda/:tienda_id", async (req, res) => {
+  try {
+    const { tienda_id } = req.params;
+    const {
+      page = 1,
+      limit = 50,
+      search = "",
+      categoria_id,
+      sin_stock = false,
+    } = req.query;
+
+    const pageInt = parseInt(page);
+    const limitInt = parseInt(limit);
+    const offset = (pageInt - 1) * limitInt;
+
+    // Query base
+    let query = supabase
+      .from("inventario_tiendas")
+      .select(
+        `
+        *,
+        variantes_producto (
+          id,
+          sku,
+          atributos,
+          precio,
+          productos (
+            id,
+            nombre,
+            categoria_id,
+            categorias (id, nombre)
+          )
+        ),
+        tiendas (id, nombre)
+      `,
+        { count: "exact" }
+      )
+      .eq("tienda_id", parseInt(tienda_id));
+
+    // Filtros
+    if (sin_stock === "true" || sin_stock === true) {
+      query = query.eq("cantidad_disponible", 0);
+    }
+
+    // Ordenamiento y paginación
+    query = query
+      .order("updated_at", { ascending: false })
+      .range(offset, offset + limitInt - 1);
+
+    const { data: inventario, error, count } = await query;
+
+    if (error) {
+      console.error("Error al obtener inventario de tienda:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    // Filtros en memoria
+    let resultados = inventario;
+
+    if (search) {
+      const searchLower = search.toLowerCase();
+      resultados = resultados.filter(
+        (item) =>
+          item.variantes_producto?.sku?.toLowerCase().includes(searchLower) ||
+          item.variantes_producto?.productos?.nombre
+            ?.toLowerCase()
+            .includes(searchLower)
+      );
+    }
+
+    if (categoria_id) {
+      resultados = resultados.filter(
+        (item) =>
+          item.variantes_producto?.productos?.categoria_id ===
+          parseInt(categoria_id)
+      );
+    }
+
+    res.json({
+      data: resultados,
+      pagination: {
+        current_page: pageInt,
+        per_page: limitInt,
+        total_items: count,
+        total_pages: Math.ceil(count / limitInt),
+      },
+    });
+  } catch (error) {
+    console.error("Error en GET /inventario/tienda/:tienda_id:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /inventario/tienda/:tienda_id/variante/:variante_id
+ * Obtener inventario específico de una variante en una tienda
+ */
+router.get("/tienda/:tienda_id/variante/:variante_id", async (req, res) => {
+  try {
+    const { tienda_id, variante_id } = req.params;
+
+    const { data, error } = await supabase
+      .from("inventario_tiendas")
+      .select(
+        `
+        *,
+        variantes_producto (
+          id,
+          sku,
+          atributos,
+          precio,
+          productos (id, nombre)
+        ),
+        tiendas (id, nombre)
+      `
+      )
+      .eq("tienda_id", parseInt(tienda_id))
+      .eq("variante_id", variante_id)
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        return res.status(404).json({
+          error: "Inventario no encontrado para esta variante en esta tienda",
+        });
+      }
+      console.error("Error al obtener inventario:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error(
+      "Error en GET /inventario/tienda/:tienda_id/variante/:variante_id:",
+      error
+    );
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /inventario/tienda/:tienda_id/variante/:variante_id
+ * Actualizar inventario de una variante en una tienda
+ */
+router.put("/tienda/:tienda_id/variante/:variante_id", async (req, res) => {
+  try {
+    const { tienda_id, variante_id } = req.params;
+    const { cantidad_disponible } = req.body;
+
+    if (cantidad_disponible === undefined) {
+      return res
+        .status(400)
+        .json({ error: "cantidad_disponible es requerida" });
+    }
+
+    // ========== OBTENER STOCK ANTERIOR DE LA TIENDA ==========
+    const { data: stockAnterior } = await supabase
+      .from("inventario_tiendas")
+      .select("cantidad_disponible")
+      .eq("tienda_id", parseInt(tienda_id))
+      .eq("variante_id", variante_id)
+      .single();
+
+    const stockPrevio = stockAnterior?.cantidad_disponible || 0;
+    const stockNuevo = parseInt(cantidad_disponible);
+    const diferencia = stockNuevo - stockPrevio;
+
+    // ========== ACTUALIZAR INVENTARIO DE TIENDA ==========
+    const { data, error } = await supabase
+      .from("inventario_tiendas")
+      .upsert(
+        {
+          tienda_id: parseInt(tienda_id),
+          variante_id: variante_id,
+          cantidad_disponible: stockNuevo,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "variante_id,tienda_id",
+        }
+      )
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error al actualizar inventario de tienda:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    // ========== SINCRONIZAR CON INVENTARIO GLOBAL ==========
+    if (diferencia !== 0) {
+      const { data: inventarioGlobal } = await supabase
+        .from("inventario_global")
+        .select("cantidad_disponible")
+        .eq("variante_id", variante_id)
+        .single();
+
+      if (inventarioGlobal) {
+        const nuevoStockGlobal =
+          inventarioGlobal.cantidad_disponible + diferencia;
+
+        await supabase
+          .from("inventario_global")
+          .update({ cantidad_disponible: nuevoStockGlobal })
+          .eq("variante_id", variante_id);
+
+        console.log(
+          `✅ Inventario global sincronizado: ${inventarioGlobal.cantidad_disponible} + (${diferencia}) = ${nuevoStockGlobal}`
+        );
+      } else {
+        // Si no existe en global, crear
+        await supabase.from("inventario_global").insert([
+          {
+            variante_id: variante_id,
+            cantidad_disponible: stockNuevo,
+            inventario_minimo: 0,
+          },
+        ]);
+
+        console.log(`✅ Creado inventario global con stock: ${stockNuevo}`);
+      }
+    }
+
+    res.json({
+      message: "Inventario de tienda actualizado correctamente",
+      data,
+    });
+  } catch (error) {
+    console.error(
+      "Error en PUT /inventario/tienda/:tienda_id/variante/:variante_id:",
+      error
+    );
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/* ======================= MOVIMIENTOS DE INVENTARIO ======================= */
+
+/**
+ * POST /inventario/movimiento
+ * Registrar un movimiento de inventario
+ */
+router.post(
+  "/movimiento",
+  requireRole(["admin", "manager", "vendedor"]),
+  async (req, res) => {
+    try {
+      const { variante_id, tipo_movimiento, cantidad, motivo, tienda_id } =
+        req.body;
+
+      // Validaciones
+      if (!variante_id || !tipo_movimiento || !cantidad) {
+        return res.status(400).json({
+          error: "variante_id, tipo_movimiento y cantidad son requeridos",
+        });
+      }
+
+      const tiposValidos = [
+        "entrada",
+        "salida",
+        "transferencia",
+        "reserva",
+        "liberacion",
+        "ajuste",
+      ];
+      if (!tiposValidos.includes(tipo_movimiento)) {
+        return res.status(400).json({
+          error: `tipo_movimiento debe ser uno de: ${tiposValidos.join(", ")}`,
+        });
+      }
+
+      if (parseInt(cantidad) <= 0) {
+        return res.status(400).json({ error: "cantidad debe ser mayor a 0" });
+      }
+
+      // NOTA: NO actualizamos manualmente inventario_tiendas ni inventario_global aquí
+      // porque hay un TRIGGER en la base de datos que lo hace automáticamente
+      // al insertar en movimientos_inventario
+
+      // Registrar movimiento en historial (el trigger actualizará los inventarios)
+      const { data: movimiento, error } = await supabase
+        .from("movimientos_inventario")
+        .insert([
+          {
+            variante_id,
+            tipo_movimiento,
+            cantidad: parseInt(cantidad),
+            motivo: motivo || null,
+            usuario_id: req.user.id,
+            tienda_id: tienda_id ? parseInt(tienda_id) : null,
+          },
+        ])
+        .select(
+          `
+          *,
+          variantes_producto (sku, productos (nombre))
+        `
+        )
+        .single();
+
+      if (error) {
+        console.error("Error al crear movimiento:", error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.status(201).json({
+        message: "Movimiento registrado correctamente",
+        data: movimiento,
+      });
+    } catch (error) {
+      console.error("Error en POST /inventario/movimiento:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+/**
+ * GET /inventario/movimientos
+ * Obtener historial de movimientos con filtros
+ */
+router.get("/movimientos", async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 50,
+      variante_id,
+      tipo_movimiento,
+      tienda_id,
+      fecha_inicio,
+      fecha_fin,
+    } = req.query;
+
+    const pageInt = parseInt(page);
+    const limitInt = parseInt(limit);
+    const offset = (pageInt - 1) * limitInt;
+
+    // Query base
+    let query = supabase.from("movimientos_inventario").select(
+      `
+        *,
+        variantes_producto (
+          id,
+          sku,
+          productos (id, nombre)
+        ),
+        tiendas (id, nombre),
+        usuarios (id, nombre)
+      `,
+      { count: "exact" }
+    );
+
+    // Filtros
+    if (variante_id) {
+      query = query.eq("variante_id", variante_id);
+    }
+    if (tipo_movimiento) {
+      query = query.eq("tipo_movimiento", tipo_movimiento);
+    }
+    if (tienda_id) {
+      query = query.eq("tienda_id", parseInt(tienda_id));
+    }
+    if (fecha_inicio) {
+      query = query.gte("created_at", fecha_inicio);
+    }
+    if (fecha_fin) {
+      query = query.lte("created_at", fecha_fin);
+    }
+
+    // Ordenamiento y paginación
+    query = query
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limitInt - 1);
+
+    const { data: movimientos, error, count } = await query;
+
+    if (error) {
+      console.error("Error al obtener movimientos:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json({
+      data: movimientos,
+      pagination: {
+        current_page: pageInt,
+        per_page: limitInt,
+        total_items: count,
+        total_pages: Math.ceil(count / limitInt),
+      },
+    });
+  } catch (error) {
+    console.error("Error en GET /inventario/movimientos:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /inventario/transferencia
+ * Transferir inventario entre tiendas
+ */
+router.post(
+  "/transferencia",
+  requireRole(["admin", "manager"]),
+  async (req, res) => {
+    try {
+      const {
+        variante_id,
+        tienda_origen_id,
+        tienda_destino_id,
+        cantidad,
+        motivo,
+      } = req.body;
+
+      // Validaciones
+      if (
+        !variante_id ||
+        !tienda_origen_id ||
+        !tienda_destino_id ||
+        !cantidad
+      ) {
+        return res.status(400).json({
+          error:
+            "variante_id, tienda_origen_id, tienda_destino_id y cantidad son requeridos",
+        });
+      }
+
+      if (tienda_origen_id === tienda_destino_id) {
+        return res.status(400).json({
+          error: "Las tiendas de origen y destino deben ser diferentes",
+        });
+      }
+
+      const cantidadInt = parseInt(cantidad);
+      if (cantidadInt <= 0) {
+        return res.status(400).json({ error: "cantidad debe ser mayor a 0" });
+      }
+
+      // Verificar stock disponible en tienda origen
+      const { data: stockOrigen, error: errorOrigen } = await supabase
+        .from("inventario_tiendas")
+        .select("cantidad_disponible")
+        .eq("tienda_id", parseInt(tienda_origen_id))
+        .eq("variante_id", variante_id)
+        .single();
+
+      if (errorOrigen || !stockOrigen) {
+        return res.status(404).json({
+          error: "No se encontró inventario en la tienda de origen",
+        });
+      }
+
+      if (stockOrigen.cantidad_disponible < cantidadInt) {
+        return res.status(400).json({
+          error: `Stock insuficiente en tienda origen. Disponible: ${stockOrigen.cantidad_disponible}, Solicitado: ${cantidadInt}`,
+        });
+      }
+
+      // Registrar movimiento de salida en tienda origen
+      const { error: errorSalida } = await supabase
+        .from("movimientos_inventario")
+        .insert([
+          {
+            variante_id,
+            tipo_movimiento: "transferencia",
+            cantidad: cantidadInt,
+            motivo: `Transferencia a tienda ${tienda_destino_id}. ${
+              motivo || ""
+            }`,
+            usuario_id: req.user.id,
+            tienda_id: parseInt(tienda_origen_id),
+          },
+        ]);
+
+      if (errorSalida) {
+        console.error("Error al registrar salida:", errorSalida);
+        return res.status(500).json({ error: errorSalida.message });
+      }
+
+      // Actualizar inventario tienda origen
+      const { error: errorUpdateOrigen } = await supabase
+        .from("inventario_tiendas")
+        .update({
+          cantidad_disponible: stockOrigen.cantidad_disponible - cantidadInt,
+        })
+        .eq("tienda_id", parseInt(tienda_origen_id))
+        .eq("variante_id", variante_id);
+
+      if (errorUpdateOrigen) {
+        console.error("Error al actualizar origen:", errorUpdateOrigen);
+        return res.status(500).json({ error: errorUpdateOrigen.message });
+      }
+
+      // Registrar movimiento de entrada en tienda destino
+      const { error: errorEntrada } = await supabase
+        .from("movimientos_inventario")
+        .insert([
+          {
+            variante_id,
+            tipo_movimiento: "transferencia",
+            cantidad: cantidadInt,
+            motivo: `Transferencia desde tienda ${tienda_origen_id}. ${
+              motivo || ""
+            }`,
+            usuario_id: req.user.id,
+            tienda_id: parseInt(tienda_destino_id),
+          },
+        ]);
+
+      if (errorEntrada) {
+        console.error("Error al registrar entrada:", errorEntrada);
+        return res.status(500).json({ error: errorEntrada.message });
+      }
+
+      // Obtener o crear inventario en tienda destino
+      const { data: stockDestino } = await supabase
+        .from("inventario_tiendas")
+        .select("cantidad_disponible")
+        .eq("tienda_id", parseInt(tienda_destino_id))
+        .eq("variante_id", variante_id)
+        .single();
+
+      const nuevaCantidadDestino =
+        (stockDestino?.cantidad_disponible || 0) + cantidadInt;
+
+      const { error: errorUpdateDestino } = await supabase
+        .from("inventario_tiendas")
+        .upsert(
+          {
+            tienda_id: parseInt(tienda_destino_id),
+            variante_id,
+            cantidad_disponible: nuevaCantidadDestino,
+          },
+          {
+            onConflict: "variante_id,tienda_id",
+          }
+        );
+
+      if (errorUpdateDestino) {
+        console.error("Error al actualizar destino:", errorUpdateDestino);
+        return res.status(500).json({ error: errorUpdateDestino.message });
+      }
+
+      res.json({
+        message: "Transferencia completada exitosamente",
+        tienda_origen_id: parseInt(tienda_origen_id),
+        tienda_destino_id: parseInt(tienda_destino_id),
+        variante_id,
+        cantidad: cantidadInt,
+      });
+    } catch (error) {
+      console.error("Error en POST /inventario/transferencia:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+/* ======================= ESTADÍSTICAS ======================= */
+
+/**
+ * GET /inventario/estadisticas
+ * Obtener estadísticas generales del inventario
+ */
+router.get("/estadisticas", async (req, res) => {
+  try {
+    // Total de variantes con inventario
+    const { count: totalVariantes } = await supabase
+      .from("inventario_global")
+      .select("*", { count: "exact", head: true });
+
+    // Stock total
+    const { data: stockData } = await supabase
+      .from("inventario_global")
+      .select("cantidad_disponible");
+
+    const stockTotal = stockData.reduce(
+      (sum, item) => sum + (item.cantidad_disponible || 0),
+      0
+    );
+
+    // Variantes sin stock
+    const { count: sinStock } = await supabase
+      .from("inventario_global")
+      .select("*", { count: "exact", head: true })
+      .eq("cantidad_disponible", 0);
+
+    // Variantes bajo mínimo (aproximado - comparación en JS)
+    const { data: bajoMinimoData } = await supabase
+      .from("inventario_global")
+      .select("cantidad_disponible, minimo_stock");
+
+    const bajoMinimo = bajoMinimoData.filter(
+      (item) => item.cantidad_disponible < item.minimo_stock
+    ).length;
+
+    res.json({
+      total_variantes: totalVariantes,
+      stock_total: stockTotal,
+      variantes_sin_stock: sinStock,
+      variantes_bajo_minimo: bajoMinimo,
+      variantes_con_stock: totalVariantes - sinStock,
+    });
+  } catch (error) {
+    console.error("Error en GET /inventario/estadisticas:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/* ======================= DISTRIBUCIÓN Y CREACIÓN ======================= */
+
+/**
+ * GET /inventario/distribucion/:variante_id
  * Obtener distribución de una variante por tiendas
  */
-router.get("/distribucion/:variantId", async (req, res) => {
+router.get("/distribucion/:variante_id", async (req, res) => {
   try {
-    const { variantId } = req.params;
+    const { variante_id } = req.params;
 
-    // Obtener el documento agregado de la variante
-    const aggSnap = await invAggCol.doc(variantId).get();
+    // Obtener todas las tiendas que tienen esta variante
+    const { data: inventarioTiendas, error } = await supabase
+      .from("inventario_tiendas")
+      .select(
+        `
+        variante_id,
+        tienda_id,
+        cantidad_disponible,
+        cantidad_reservada,
+        updated_at,
+        tiendas (id, nombre)
+      `
+      )
+      .eq("variante_id", variante_id);
 
-    if (!aggSnap.exists) {
-      return res.status(404).json({
-        success: false,
-        message: "Variante no encontrada en inventario",
+    if (error) {
+      console.error("Error al obtener distribución:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    if (!inventarioTiendas || inventarioTiendas.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        message: "No hay inventario registrado para esta variante",
       });
     }
 
-    const aggData = aggSnap.data();
-    const storesMap = aggData.stores || {};
+    // Obtener info adicional de la variante desde inventario global (incluye minimo_stock)
+    const { data: varianteInfo } = await supabase
+      .from("inventario_global")
+      .select(
+        `
+        variante_id,
+        cantidad_disponible,
+        minimo_stock,
+        variantes_producto (sku, productos (nombre))
+      `
+      )
+      .eq("variante_id", variante_id)
+      .single();
 
-    // Obtener nombres de tiendas
-    const storeIds = Object.keys(storesMap);
-    const distribucion = [];
-
-    for (const storeId of storeIds) {
-      const storeSnap = await storesCol.doc(storeId).get();
-      const storeData = storeSnap.exists ? storeSnap.data() : {};
-      const storeName = storeData.nombre || "Tienda sin nombre";
-
-      const storeInfo = storesMap[storeId];
-
-      distribucion.push({
-        tienda_id: storeId,
-        tienda_nombre: storeName,
-        stock: storeInfo.stock || 0,
-        stock_minimo: storeInfo.min || 0,
-        ultima_actualizacion: storeInfo.updatedAt || null,
-      });
-    }
+    // Formatear datos para el frontend
+    const distribucion = inventarioTiendas.map((item) => ({
+      tienda_id: item.tienda_id,
+      tienda_nombre: item.tiendas?.nombre || "Tienda sin nombre",
+      stock: item.cantidad_disponible || 0,
+      ultima_actualizacion: item.updated_at,
+    }));
 
     // Ordenar por stock descendente
     distribucion.sort((a, b) => b.stock - a.stock);
 
-    res.json({
+    const response = {
       success: true,
       data: distribucion,
-      variante: {
-        id: variantId,
-        sku: aggData.sku,
-        productName: aggData.productName,
-        totalStock: aggData.totalStock || 0,
-      },
+      variante: varianteInfo
+        ? {
+            id: variante_id,
+            sku: varianteInfo.variantes_producto?.sku || "N/A",
+            productName:
+              varianteInfo.variantes_producto?.productos?.nombre || "N/A",
+            totalStock: varianteInfo.cantidad_disponible || 0,
+            inventario_minimo: varianteInfo.minimo_stock || 0,
+          }
+        : null,
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error("Error en GET /inventario/distribucion:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /inventario/buscar-variante/:sku
+ * Buscar una variante por SKU (búsqueda parcial, case-insensitive)
+ */
+router.get("/buscar-variante/:sku", async (req, res) => {
+  try {
+    const { sku } = req.params;
+
+    if (!sku || sku.trim() === "") {
+      return res.status(400).json({
+        error: "SKU es requerido",
+      });
+    }
+
+    // Buscar variante por SKU (búsqueda parcial)
+    const { data: variantes, error } = await supabase
+      .from("variantes_producto")
+      .select(
+        `
+        id,
+        sku,
+        atributos,
+        precio,
+        producto_id,
+        activo,
+        productos (id, nombre, categorias (id, nombre))
+      `
+      )
+      .ilike("sku", `%${sku.trim()}%`) // Búsqueda parcial
+      .eq("activo", true) // Solo variantes activas
+      .limit(10); // Máximo 10 resultados
+
+    if (error) {
+      console.error("Error al buscar variante:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    if (!variantes || variantes.length === 0) {
+      return res.status(404).json({
+        error: "No se encontró ninguna variante con ese SKU",
+      });
+    }
+
+    // Si encontró exactamente una, retornarla directamente
+    if (variantes.length === 1) {
+      return res.json({
+        success: true,
+        data: variantes[0],
+      });
+    }
+
+    // Si encontró varias, retornar lista para que el usuario elija
+    res.json({
+      success: true,
+      multiple: true,
+      data: variantes,
+      message: `Se encontraron ${variantes.length} variantes con ese SKU`,
     });
-  } catch (e) {
-    console.error("❌ Error al obtener distribución:", e);
-    res.status(500).json({ success: false, message: e.message });
+  } catch (error) {
+    console.error("Error en GET /inventario/buscar-variante:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -606,116 +960,176 @@ router.get("/distribucion/:variantId", async (req, res) => {
  * POST /inventario/crear
  * Crear inventario inicial para una variante en una tienda
  */
-router.post("/crear", async (req, res) => {
+router.post("/crear", requireRole(["admin", "manager"]), async (req, res) => {
   try {
-    const { tienda_id, variante_id, stock_inicial, stock_minimo, motivo } =
-      req.body;
+    const { tienda_id, variante_id, stock_inicial, motivo } = req.body;
 
     // Validaciones
     if (!tienda_id || !variante_id) {
       return res.status(400).json({
-        success: false,
-        message: "tienda_id y variante_id son requeridos",
+        error: "tienda_id y variante_id son requeridos",
       });
     }
 
     if (stock_inicial == null || stock_inicial < 0) {
       return res.status(400).json({
-        success: false,
-        message: "stock_inicial debe ser mayor o igual a 0",
+        error: "stock_inicial debe ser mayor o igual a 0",
       });
     }
 
     // Verificar que la tienda existe
-    const storeSnap = await storesCol.doc(tienda_id).get();
-    if (!storeSnap.exists) {
+    const { data: tienda, error: errorTienda } = await supabase
+      .from("tiendas")
+      .select("id, nombre")
+      .eq("id", parseInt(tienda_id))
+      .single();
+
+    if (errorTienda || !tienda) {
       return res.status(404).json({
-        success: false,
-        message: "Tienda no encontrada",
+        error: "Tienda no encontrada",
       });
     }
 
-    // Verificar que la variante existe en algún producto
-    const productsSnap = await productsCol.get();
-    let foundProduct = null;
-    let foundVariant = null;
+    // Verificar que la variante existe
+    const { data: variante, error: errorVariante } = await supabase
+      .from("variantes_producto")
+      .select("id, sku, producto_id, productos (nombre)")
+      .eq("id", variante_id)
+      .single();
 
-    for (const doc of productsSnap.docs) {
-      const prod = doc.data();
-      const variant = (prod.variantes || []).find((v) => v.id === variante_id);
-      if (variant) {
-        foundProduct = { id: doc.id, ...prod };
-        foundVariant = variant;
-        break;
-      }
-    }
-
-    if (!foundProduct || !foundVariant) {
+    if (errorVariante || !variante) {
       return res.status(404).json({
-        success: false,
-        message: "Variante no encontrada",
+        error: "Variante no encontrada",
       });
     }
 
     // Verificar si ya existe inventario para esta variante en esta tienda
-    const existingIdx = await invIdxCol
-      .doc(`${variante_id}_${tienda_id}`)
-      .get();
-    if (existingIdx.exists) {
+    const { data: existente } = await supabase
+      .from("inventario_tiendas")
+      .select("id")
+      .eq("tienda_id", parseInt(tienda_id))
+      .eq("variante_id", variante_id)
+      .single();
+
+    if (existente) {
       return res.status(400).json({
-        success: false,
-        message: "Ya existe inventario para esta variante en esta tienda",
+        error: "Ya existe inventario para esta variante en esta tienda",
       });
     }
 
-    // Crear inventario en transacción
-    await db.runTransaction(async (tx) => {
-      const now = new Date();
+    // ========== SINCRONIZACIÓN CON INVENTARIO GLOBAL ==========
+    // 1. Verificar si ya existe registro en inventario_global
+    const { data: inventarioGlobal, error: errorGlobalSelect } = await supabase
+      .from("inventario_global")
+      .select("id, cantidad_disponible, minimo_stock")
+      .eq("variante_id", variante_id)
+      .single();
 
-      // Actualizar índices de inventario
-      upsertInventoryIndicesTx(tx, {
-        storeId: tienda_id,
-        productId: foundProduct.id,
-        prod: foundProduct,
-        variant: foundVariant,
-        oldStock: 0,
-        newStock: stock_inicial,
-        newMin: stock_minimo || 0,
-      });
+    // Si hay error pero NO es el de "no encontrado", lanzar el error
+    if (errorGlobalSelect && errorGlobalSelect.code !== "PGRST116") {
+      console.error("Error al consultar inventario_global:", errorGlobalSelect);
+      throw new Error(errorGlobalSelect.message);
+    }
 
-      // Registrar log de creación
-      if (stock_inicial > 0) {
-        addStoreLogTx(tx, {
-          storeId: tienda_id,
-          payload: {
-            type: "entrada",
-            variantId: variante_id,
-            productId: foundProduct.id,
-            quantity: stock_inicial,
-            reason: motivo || "Inventario inicial",
-            userId: req.user?.uid || "system",
-            userName: req.user?.email || "Sistema",
-            timestamp: now,
-            oldStock: 0,
-            newStock: stock_inicial,
-          },
-        });
+    if (inventarioGlobal) {
+      // Si existe, SUMAR el stock al global
+      const nuevoStockGlobal =
+        (inventarioGlobal.cantidad_disponible || 0) + parseInt(stock_inicial);
+
+      const { error: errorGlobalUpdate } = await supabase
+        .from("inventario_global")
+        .update({
+          cantidad_disponible: nuevoStockGlobal,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("variante_id", variante_id);
+
+      if (errorGlobalUpdate) {
+        console.error(
+          "❌ Error al actualizar inventario_global:",
+          errorGlobalUpdate
+        );
+        throw new Error(errorGlobalUpdate.message);
       }
-    });
+
+      console.log(
+        `✅ Actualizado inventario_global: ${inventarioGlobal.cantidad_disponible} + ${stock_inicial} = ${nuevoStockGlobal}`
+      );
+    } else {
+      // Si NO existe, crear nuevo registro en inventario_global
+      const { error: errorGlobalInsert } = await supabase
+        .from("inventario_global")
+        .insert([
+          {
+            variante_id: variante_id,
+            cantidad_disponible: parseInt(stock_inicial),
+            minimo_stock: 0, // Usar minimo_stock en lugar de inventario_minimo
+          },
+        ]);
+
+      if (errorGlobalInsert) {
+        console.error(
+          "❌ Error al crear inventario_global:",
+          errorGlobalInsert
+        );
+        throw new Error(errorGlobalInsert.message);
+      }
+
+      console.log(
+        `✅ Creado nuevo registro en inventario_global con stock: ${stock_inicial}`
+      );
+    }
+
+    // 2. Crear inventario en tienda
+    const { data: nuevoInventario, error: errorInventario } = await supabase
+      .from("inventario_tiendas")
+      .insert([
+        {
+          tienda_id: parseInt(tienda_id),
+          variante_id: variante_id,
+          cantidad_disponible: parseInt(stock_inicial),
+        },
+      ])
+      .select()
+      .single();
+
+    if (errorInventario) {
+      console.error("Error al crear inventario:", errorInventario);
+      return res.status(500).json({ error: errorInventario.message });
+    }
+
+    // 3. Registrar movimiento en historial SOLO para trazabilidad
+    // IMPORTANTE: Este movimiento usa tipo "ajuste" para que el trigger NO lo procese
+    // (ya actualizamos manualmente inventario_global e inventario_tiendas arriba)
+    if (stock_inicial > 0) {
+      await supabase.from("movimientos_inventario").insert([
+        {
+          variante_id: variante_id,
+          tipo_movimiento: "ajuste", // Tipo que el trigger puede ignorar
+          cantidad: parseInt(stock_inicial),
+          motivo: motivo || "Inventario inicial - Producto agregado a tienda",
+          usuario_id: req.user.id,
+          tienda_id: parseInt(tienda_id),
+        },
+      ]);
+    }
 
     res.json({
       success: true,
       message: "Inventario creado exitosamente",
       data: {
-        tienda_id,
-        variante_id,
-        stock: stock_inicial,
-        stock_minimo: stock_minimo || 0,
+        id: nuevoInventario.id,
+        tienda_id: parseInt(tienda_id),
+        tienda_nombre: tienda.nombre,
+        variante_id: variante_id,
+        variante_sku: variante.sku,
+        producto_nombre: variante.productos?.nombre,
+        stock: parseInt(stock_inicial),
       },
     });
-  } catch (e) {
-    console.error("❌ Error al crear inventario:", e);
-    res.status(500).json({ success: false, message: e.message });
+  } catch (error) {
+    console.error("Error en POST /inventario/crear:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 

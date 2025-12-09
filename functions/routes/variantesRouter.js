@@ -148,7 +148,16 @@ router.get("/:id", async (req, res) => {
 // POST /variantes - Crear nueva variante
 router.post("/", requireRole(["admin", "manager"]), async (req, res) => {
   try {
-    const { producto_id, sku, atributos, precio, costo, activo } = req.body;
+    const {
+      producto_id,
+      sku,
+      atributos,
+      precio,
+      costo,
+      activo,
+      imagen_url,
+      imagen_thumbnail_url,
+    } = req.body;
 
     // Validaciones básicas
     if (!producto_id || !sku) {
@@ -190,6 +199,8 @@ router.post("/", requireRole(["admin", "manager"]), async (req, res) => {
           precio: precio || producto.precio_base,
           costo: costo || null,
           activo: activo !== false,
+          imagen_url: imagen_url || null,
+          imagen_thumbnail_url: imagen_thumbnail_url || null,
         },
       ])
       .select(
@@ -217,7 +228,15 @@ router.post("/", requireRole(["admin", "manager"]), async (req, res) => {
 router.put("/:id", requireRole(["admin", "manager"]), async (req, res) => {
   try {
     const { id } = req.params;
-    const { sku, atributos, precio, costo, activo } = req.body;
+    const {
+      sku,
+      atributos,
+      precio,
+      costo,
+      activo,
+      imagen_url,
+      imagen_thumbnail_url,
+    } = req.body;
 
     // Si se actualiza el SKU, verificar que no exista
     if (sku) {
@@ -241,6 +260,8 @@ router.put("/:id", requireRole(["admin", "manager"]), async (req, res) => {
         precio,
         costo,
         activo,
+        imagen_url: imagen_url || null,
+        imagen_thumbnail_url: imagen_thumbnail_url || null,
         updated_at: new Date(),
       })
       .eq("id", id)
