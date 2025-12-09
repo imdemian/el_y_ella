@@ -12,6 +12,8 @@ import TiendasScreen from "../pages/Tiendas/Tiendas";
 import RegistroUsuario from "../pages/Usuarios/Registro.Usuario";
 import Usuarios from "../pages/Usuarios/Usuarios";
 import Ventas from "../pages/Ventas/Ventas";
+import Preventa from "../pages/Preventa/Preventa";
+import Caja from "../pages/Caja/Caja";
 
 // ✅ Roles en minúscula para coincidir con la base de datos
 const configRouting = [
@@ -76,9 +78,19 @@ const configRouting = [
     roles: ["admin", "manager"],
   },
   {
+    path: "/preventa",
+    page: Preventa,
+    roles: ["admin", "manager", "vendedor", "empleado"],
+  },
+  {
+    path: "/caja",
+    page: Caja,
+    roles: ["admin", "manager", "cajero"],
+  },
+  {
     path: "/ventas",
     page: Ventas,
-    roles: ["admin", "manager", "cajero"],
+    roles: ["admin", "manager"],
   },
   {
     path: "/historial",

@@ -118,11 +118,14 @@ const Historial = () => {
     try {
       const filtros = {};
 
+      // Convertir fechas locales a UTC para el filtro
       if (fechaInicio) {
-        filtros.fecha_inicio = `${fechaInicio}T00:00:00`;
+        const inicioLocal = new Date(`${fechaInicio}T00:00:00`);
+        filtros.fecha_inicio = inicioLocal.toISOString();
       }
       if (fechaFin) {
-        filtros.fecha_fin = `${fechaFin}T23:59:59`;
+        const finLocal = new Date(`${fechaFin}T23:59:59.999`);
+        filtros.fecha_fin = finLocal.toISOString();
       }
       if (estadoFiltro) {
         filtros.estado = estadoFiltro;
@@ -137,7 +140,17 @@ const Historial = () => {
         filtros.usuario_id = vendedorFiltro;
       }
 
-      console.log("📊 Cargando ventas con filtros:", filtros);
+      console.log("🔍 [Historial] Filtrando ventas:");
+      console.log(
+        "   Fecha inicio (local):",
+        fechaInicio ? `${fechaInicio}T00:00:00` : "N/A"
+      );
+      console.log("   Fecha inicio (UTC):", filtros.fecha_inicio || "N/A");
+      console.log(
+        "   Fecha fin (local):",
+        fechaFin ? `${fechaFin}T23:59:59` : "N/A"
+      );
+      console.log("   Fecha fin (UTC):", filtros.fecha_fin || "N/A");
 
       const resultado = await VentaService.obtenerVentas(filtros);
       const ventasData = resultado.data || [];
@@ -244,15 +257,17 @@ const Historial = () => {
     }
   };
 
-  // Formatear fecha
+  // Formatear fecha - Convierte UTC a hora de México (CST/CDT)
   const formatearFecha = (fecha) => {
     const date = new Date(fecha);
-    return date.toLocaleDateString("es-MX", {
+    // toLocaleString automáticamente convierte UTC a hora local del navegador
+    return date.toLocaleString("es-MX", {
       year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "America/Mexico_City", // Forzar zona horaria de México
     });
   };
 

@@ -9,7 +9,6 @@ import {
   faBarcode,
 } from "@fortawesome/free-solid-svg-icons";
 import { VentaService } from "../../services/supabase/ventaService";
-import { VarianteService } from "../../services/supabase/varianteService";
 import { DescuentoService } from "../../services/supabase/descuentoService";
 import "./Ventas.scss";
 
@@ -68,10 +67,25 @@ const Ventas = () => {
 
       setTiendas(listaTiendas);
 
-      if (tiendaUsuario) {
-        // Usuario tiene tienda asignada
-        setUsuarioTieneTienda(true);
-        setTiendaSeleccionada(tiendaUsuario);
+      if (tiendaUsuario && listaTiendas.length > 0) {
+        // Si tiendaUsuario es un número (ID antiguo de Firebase), buscar la tienda UUID correspondiente
+        // Si ya es un UUID string, usarlo directamente
+        const tiendaEncontrada = listaTiendas.find((t) => {
+          // Verificar si el ID del usuario coincide con el ID de la tienda (puede ser entero o UUID)
+          return t.id === tiendaUsuario || t.id === String(tiendaUsuario);
+        });
+
+        if (tiendaEncontrada) {
+          setUsuarioTieneTienda(true);
+          setTiendaSeleccionada(tiendaEncontrada.id); // Usar el UUID de la tienda encontrada
+        } else {
+          // Si no se encuentra, usar la primera tienda disponible
+          setUsuarioTieneTienda(false);
+          setTiendaSeleccionada(listaTiendas[0].id);
+          console.warn(
+            `No se encontró tienda con ID ${tiendaUsuario}, usando primera tienda disponible`
+          );
+        }
       } else {
         // Usuario NO tiene tienda, debe seleccionar una
         setUsuarioTieneTienda(false);
@@ -505,41 +519,60 @@ const Ventas = () => {
           </div>
 
           {/* Input de búsqueda rápida */}
-          <div className="busqueda-rapida">
-            <FontAwesomeIcon icon={faBarcode} className="barcode-icon" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Escanear código de barras o buscar SKU..."
-              className="input-busqueda-rapida"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-            />
-          </div>
-
-          {/* Resultados de búsqueda rápida */}
-          {resultadosBusqueda.length > 0 && (
-            <div className="resultados-rapidos">
-              {resultadosBusqueda.map((variante) => (
-                <div
-                  key={variante.id}
-                  className="resultado-item"
-                  onClick={() => agregarAlCarrito(variante)}
-                >
-                  <span className="resultado-nombre">
-                    {variante.nombre_producto}
-                  </span>
-                  <span className="resultado-sku">{variante.sku}</span>
-                  <span className="resultado-precio">
-                    $
-                    {variante.precio.toLocaleString("es-MX", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-              ))}
+          <>
+            <div className="busqueda-rapida">
+              <FontAwesomeIcon icon={faBarcode} className="barcode-icon" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Escanear código de barras o buscar SKU..."
+                className="input-busqueda-rapida"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+              />
             </div>
-          )}
+
+            {/* Resultados de búsqueda rápida */}
+            {resultadosBusqueda.length > 0 && (
+              <div className="resultados-rapidos">
+                {resultadosBusqueda.map((variante) => (
+                  <div
+                    key={variante.id}
+                    className="resultado-item"
+                    onClick={() => agregarAlCarrito(variante)}
+                  >
+                    {(variante.imagen_thumbnail_url ||
+                      variante.imagen_url ||
+                      variante.producto_imagen_thumbnail ||
+                      variante.producto_imagen_url) && (
+                      <img
+                        src={
+                          variante.imagen_thumbnail_url ||
+                          variante.imagen_url ||
+                          variante.producto_imagen_thumbnail ||
+                          variante.producto_imagen_url
+                        }
+                        alt={variante.nombre_producto}
+                        className="resultado-imagen"
+                      />
+                    )}
+                    <div className="resultado-info">
+                      <span className="resultado-nombre">
+                        {variante.nombre_producto}
+                      </span>
+                      <span className="resultado-sku">{variante.sku}</span>
+                    </div>
+                    <span className="resultado-precio">
+                      $
+                      {variante.precio.toLocaleString("es-MX", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
 
           {/* Lista de items del carrito */}
           <div className="carrito-items">
@@ -553,6 +586,21 @@ const Ventas = () => {
               carrito.map((item) => (
                 <div key={item.id} className="carrito-item">
                   <div className="item-principal">
+                    {(item.imagen_thumbnail_url ||
+                      item.imagen_url ||
+                      item.producto_imagen_thumbnail ||
+                      item.producto_imagen_url) && (
+                      <img
+                        src={
+                          item.imagen_thumbnail_url ||
+                          item.imagen_url ||
+                          item.producto_imagen_thumbnail ||
+                          item.producto_imagen_url
+                        }
+                        alt={item.nombre}
+                        className="item-imagen"
+                      />
+                    )}
                     <div className="item-info">
                       <h4>{item.nombre}</h4>
                       {item.atributos && (
