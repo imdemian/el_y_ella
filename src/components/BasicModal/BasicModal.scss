@@ -1,0 +1,54 @@
+// Estilos para el header del modal - con máxima especificidad
+.modal .modal-dialog .modal-content .modal-header,
+.modal-header {
+  background: #2c3e50 !important;
+  background-color: #2c3e50 !important;
+  background-image: none !important;
+  color: #fff !important;
+  padding: 1rem !important;
+  border-bottom: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+// Título del modal - con máxima especificidad
+.modal .modal-dialog .modal-content .modal-header .modal-title,
+.modal-header .modal-title,
+.modal-title.h4 {
+  color: #fff !important;
+  font-weight: 600 !important;
+  font-size: 1.25rem !important;
+  margin: 0 !important;
+}
+
+// Ícono de cerrar personalizado
+.close-icon {
+  cursor: pointer !important;
+  font-size: 1.5rem !important;
+  color: #fff !important;
+  transition: all 0.3s ease !important;
+  opacity: 0.8 !important;
+
+  &:hover {
+    opacity: 1 !important;
+    transform: scale(1.1) !important;
+  }
+}
+
+// Ocultar el botón de cierre por defecto de Bootstrap
+.btn-close {
+  display: none !important;
+}
+
+// Body del modal
+.modal-body {
+  padding: 1.5rem !important;
+}
+
+// Contenedor del modal
+.modal-content {
+  border-radius: 10px !important;
+  border: none !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2) !important;
+}

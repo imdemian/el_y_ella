@@ -3,6 +3,7 @@ import { Modal } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimesCircle } from "@fortawesome/free-solid-svg-icons";
 import ModalHeader from "react-bootstrap/ModalHeader";
+import "./BasicModal.scss";
 
 function BasicModal(props) {
   // Desestructuramos las props, definiendo valores por defecto
@@ -12,17 +13,6 @@ function BasicModal(props) {
     title = "Título predeterminado",
     children,
     size = "lg",
-    headerStyle = {
-      backgroundColor: "#2c3e50",
-      color: "#fff",
-      padding: "1rem",
-    },
-    titleStyle = {},
-    closeIconStyle = {
-      cursor: "pointer",
-      marginLeft: "auto",
-      fontSize: "1.5rem",
-    },
     bodyStyle = {},
   } = props;
 
@@ -35,13 +25,13 @@ function BasicModal(props) {
       keyboard={false}
       size={size}
     >
-      <ModalHeader style={headerStyle}>
-        <Modal.Title style={titleStyle}>{title}</Modal.Title>
+      <ModalHeader>
+        <Modal.Title>{title}</Modal.Title>
         <FontAwesomeIcon
           title="Cerrar ventana"
           icon={faTimesCircle}
           onClick={() => setShow(false)}
-          style={closeIconStyle}
+          className="close-icon"
         />
       </ModalHeader>
       <Modal.Body style={bodyStyle}>{children}</Modal.Body>
