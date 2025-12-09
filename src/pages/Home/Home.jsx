@@ -29,14 +29,24 @@ const Home = () => {
   const cargarDatos = async () => {
     setCargando(true);
     try {
-      // Obtener fecha de hoy
+      // Obtener fecha de hoy en zona horaria local
       const hoy = new Date();
-      const fechaInicio = `${hoy.getFullYear()}-${String(
-        hoy.getMonth() + 1
-      ).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}T00:00:00`;
-      const fechaFin = `${hoy.getFullYear()}-${String(
-        hoy.getMonth() + 1
-      ).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}T23:59:59`;
+
+      // Crear fecha de inicio del día (00:00:00) en hora local
+      const inicioDelDia = new Date(hoy);
+      inicioDelDia.setHours(0, 0, 0, 0);
+
+      // Crear fecha de fin del día (23:59:59) en hora local
+      const finDelDia = new Date(hoy);
+      finDelDia.setHours(23, 59, 59, 999);
+
+      // Convertir a ISO string (incluye zona horaria)
+      const fechaInicio = inicioDelDia.toISOString();
+      const fechaFin = finDelDia.toISOString();
+
+      console.log("🔍 [Home] Filtrando ventas del día:");
+      console.log("   Inicio:", fechaInicio);
+      console.log("   Fin:", fechaFin);
 
       // Cargar tiendas y ventas del día en paralelo
       const [listaTiendas, ventasDelDia] = await Promise.all([
@@ -47,12 +57,21 @@ const Home = () => {
         }),
       ]);
 
+      console.log("✅ [Home] Ventas recibidas:", ventasDelDia);
+      console.log(
+        "   Total de ventas del día:",
+        ventasDelDia?.data?.length || 0
+      );
+
+      // Extraer el array de ventas de la respuesta
+      const ventasArray = ventasDelDia?.data || [];
+
       setTiendas(listaTiendas);
-      setVentasHoy(ventasDelDia || []);
+      setVentasHoy(ventasArray);
 
       // Últimas 10 ventas para actividad reciente
-      const recientes = Array.isArray(ventasDelDia)
-        ? [...ventasDelDia]
+      const recientes = Array.isArray(ventasArray)
+        ? [...ventasArray]
             .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
             .slice(0, 10)
         : [];
@@ -99,10 +118,20 @@ const Home = () => {
     }).format(cantidad);
   };
 
+  const formatearFecha = (fecha) => {
+    const date = new Date(fecha);
+    return date.toLocaleString("es-MX", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "America/Mexico_City",
+    });
+  };
+
   const formatearHora = (fecha) => {
     return new Date(fecha).toLocaleTimeString("es-MX", {
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "America/Mexico_City",
     });
   };
 
