@@ -1,2 +1,1 @@
-export const FUNCTIONS_URL =
-  "http://localhost:5001/elyella-d411f/us-central1/api/supabase";
+export const FUNCTIONS_URL = import.meta.env.VITE_API_URL + "/supabase";

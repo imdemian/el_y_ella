@@ -1,13 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import { AuthService } from "../../services/supabase/authService";
 import { UsuariosService } from "../../services/supabase/usuariosService";
+import { TiendaService } from "../../services/supabase/tiendaService";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faEnvelope,
   faLock,
   faUser,
   faUserTag,
+  faStore,
 } from "@fortawesome/free-solid-svg-icons";
 import "./Registro.Usuario.scss";
 
@@ -20,8 +22,24 @@ export default function RegistroUsuario({ usuario, setShow, refetch }) {
     nombre: usuario?.nombre || "",
     apellido: usuario?.apellido || "",
     rol: usuario?.rol || "user",
+    tienda_id: usuario?.tienda_id || "",
   });
   const [loading, setLoading] = useState(false);
+  const [tiendas, setTiendas] = useState([]);
+
+  useEffect(() => {
+    cargarTiendas();
+  }, []);
+
+  const cargarTiendas = async () => {
+    try {
+      const listaTiendas = await TiendaService.obtenerTiendas();
+      setTiendas(listaTiendas);
+    } catch (error) {
+      console.error("Error al cargar tiendas:", error);
+      toast.error("Error al cargar las tiendas");
+    }
+  };
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -35,7 +53,9 @@ export default function RegistroUsuario({ usuario, setShow, refetch }) {
         // EDITAR USUARIO
         const updateData = {
           nombre: form.nombre,
+          apellido: form.apellido,
           rol: form.rol,
+          tienda_id: form.tienda_id || null,
         };
 
         if (form.empleadoId) {
@@ -60,6 +80,7 @@ export default function RegistroUsuario({ usuario, setShow, refetch }) {
           nombre: form.nombre,
           apellido: form.apellido,
           rol: form.rol,
+          tienda_id: form.tienda_id || null,
         };
 
         if (form.empleadoId) {
@@ -183,8 +204,31 @@ export default function RegistroUsuario({ usuario, setShow, refetch }) {
             <option value="user">Usuario</option>
             <option value="admin">Administrador</option>
             <option value="manager">Gerente</option>
-            <option value="tecnico">Técnico</option>
+            <option value="cajero">Cajero</option>
           </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="tienda_id" className="form-label">
+            <FontAwesomeIcon icon={faStore} /> Tienda Asignada
+          </label>
+          <select
+            id="tienda_id"
+            name="tienda_id"
+            value={form.tienda_id}
+            onChange={handleChange}
+            className="form-select"
+          >
+            <option value="">Sin tienda asignada</option>
+            {tiendas.map((tienda) => (
+              <option key={tienda.id} value={tienda.id}>
+                {tienda.nombre}
+              </option>
+            ))}
+          </select>
+          <small className="form-hint">
+            Asigna una tienda al usuario para filtrar inventario y ventas
+          </small>
         </div>
 
         <div className="form-actions">

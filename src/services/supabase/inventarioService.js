@@ -1,7 +1,8 @@
 // src/services/supabase/inventarioService.js
 
-const API_URL =
-  "http://localhost:5001/elyella-d411f/us-central1/api/supabase/inventario";
+import { FUNCTIONS_URL } from "../../utils/constants";
+
+const API_URL = FUNCTIONS_URL + "/inventario";
 
 export class InventarioService {
   /**
