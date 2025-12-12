@@ -1,6 +1,8 @@
-import * as functions from "firebase-functions";
+import { onRequest } from "firebase-functions/v2/https";
+import * as logger from "firebase-functions/logger";
 import express from "express";
 import cors from "cors";
+import dotenv from "dotenv";
 
 import "./admin.js";
 
@@ -20,13 +22,14 @@ import supDescuentosRouter from "./routes/descuentosRouter.js";
 import supCodigosAccesoRouter from "./routes/codigosAccesoRouter.js";
 import storageRouter from "./routes/storageRouter.js";
 
+dotenv.config();
+
 const app = express();
+
 app.use(cors({ origin: true }));
 app.use(express.json());
 
 // Montar las rutas de la API
-// app.use("/test", testRouter);
-
 app.use("/supabase/auth", supAuthRouter);
 app.use("/supabase/categorias", supCategoriasRouter);
 app.use("/supabase/tiendas", supTiendaRouter);
@@ -41,6 +44,29 @@ app.use("/supabase/descuentos", supDescuentosRouter);
 app.use("/supabase/codigos-acceso", supCodigosAccesoRouter);
 app.use("/supabase/storage", storageRouter);
 
-// Montar la API
+// Ruta base para verificar estado
+app.get("/", (req, res) => {
+  res.send("API funcionando correctamente 🚀");
+});
 
-export const api = functions.https.onRequest(app);
+// Manejo de errores global
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  logger.error("Error no controlado:", err);
+  res.status(500).json({
+    success: false,
+    message: "Error interno del servidor",
+    // eslint-disable-next-line no-undef
+    error: process.env.NODE_ENV === "development" ? err.message : undefined,
+  });
+});
+
+// ✅ Exportar usando la sintaxis Gen 2 (Para evitar el error de Healthcheck)
+export const api = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+    maxInstances: 10,
+  },
+  app
+);

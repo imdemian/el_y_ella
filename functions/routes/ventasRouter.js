@@ -193,11 +193,14 @@ router.post("/", async (req, res) => {
         resultadoVenta
       );
 
+      // El resultado viene como array, tomamos el primer elemento
+      const ventaCreada = resultadoVenta[0] || resultadoVenta;
+
       res.status(201).json({
         message: "Venta creada exitosamente",
-        id: resultadoVenta.venta_id,
-        folio: resultadoVenta.folio,
-        total: resultadoVenta.total,
+        id: ventaCreada.venta_id,
+        folio: ventaCreada.folio,
+        total: ventaCreada.total,
       });
     } catch (transactionError) {
       // Si la transacción falla, PostgreSQL automáticamente revierte TODOS los cambios
