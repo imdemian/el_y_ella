@@ -45,7 +45,6 @@ export class UsuariosService {
       }
 
       const data = await response.json();
-      console.log(data);
 
       // Manejar errores específicos de autenticación
       if (response.status === 401) {

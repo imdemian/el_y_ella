@@ -36,7 +36,6 @@ export class VarianteService {
     }
 
     const result = await response.json();
-    console.log("Resultado del backend:", result);
 
     // El backend devuelve { data, pagination, filters }
     // Para el componente de códigos de barra, solo necesitamos los datos con información del producto

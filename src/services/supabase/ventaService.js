@@ -20,20 +20,11 @@ export class VentaService {
    * Crear una nueva venta
    */
   static async crearVenta(ventaData) {
-    console.log("📡 [VentaService] crearVenta - URL:", `${API_URL}`);
-    console.log("📡 [VentaService] crearVenta - Datos:", ventaData);
-
     const response = await fetch(API_URL, {
       method: "POST",
       headers: this._getAuthHeaders(),
       body: JSON.stringify(ventaData),
     });
-
-    console.log(
-      "📡 [VentaService] crearVenta - Response status:",
-      response.status,
-      response.body
-    );
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -53,26 +44,13 @@ export class VentaService {
    * Obtener todas las ventas (con filtros opcionales)
    */
   static async obtenerVentas(filtros = {}) {
-    console.log(
-      "📡 [VentaService] obtenerVentas - LLAMADO CON FILTROS:",
-      filtros
-    );
-    console.log("📡 [VentaService] obtenerVentas - URL:", `${API_URL}`);
-
     const params = new URLSearchParams(filtros);
     const fullUrl = `${API_URL}?${params}`;
-
-    console.log("📡 [VentaService] obtenerVentas - URL Completa:", fullUrl);
 
     const response = await fetch(fullUrl, {
       method: "GET",
       headers: this._getAuthHeaders(),
     });
-
-    console.log(
-      "📡 [VentaService] obtenerVentas - Response status:",
-      response.status
-    );
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -127,6 +105,27 @@ export class VentaService {
   }
 
   /**
+   * Actualizar el vendedor de una venta (solo admin)
+   */
+  static async actualizarVendedor(ventaId, nuevoUsuarioId) {
+    const response = await fetch(`${API_URL}/${ventaId}/vendedor`, {
+      method: "PUT",
+      headers: this._getAuthHeaders(),
+      body: JSON.stringify({ usuario_id: nuevoUsuarioId }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("No autorizado. Por favor inicia sesión nuevamente.");
+      }
+      const error = await response.json();
+      throw new Error(error.message || "Error al actualizar vendedor");
+    }
+
+    return await response.json();
+  }
+
+  /**
    * Buscar variantes por SKU o nombre (para el carrito)
    * Busca en inventario_global (muestra todo el inventario disponible)
    */
@@ -174,8 +173,6 @@ export class VentaService {
    * Obtener ventas pendientes de pago (tickets generados)
    */
   static async obtenerVentasPendientes(tienda_id = null) {
-    console.log("📡 [VentaService] obtenerVentasPendientes");
-
     const url = tienda_id
       ? `${API_URL}/pendientes?tienda_id=${tienda_id}`
       : `${API_URL}/pendientes`;
@@ -200,17 +197,10 @@ export class VentaService {
    * Buscar una venta por folio
    */
   static async buscarPorFolio(folio) {
-    console.log("📡 [VentaService] buscarPorFolio - Folio:", folio);
-
     const response = await fetch(`${API_URL}/folio/${folio}`, {
       method: "GET",
       headers: this._getAuthHeaders(),
     });
-
-    console.log(
-      "📡 [VentaService] buscarPorFolio - Response status:",
-      response.status
-    );
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -224,7 +214,6 @@ export class VentaService {
     }
 
     const result = await response.json();
-    console.log("📡 [VentaService] buscarPorFolio - Resultado:", result);
     return result;
   }
 
@@ -232,19 +221,11 @@ export class VentaService {
    * Cobrar una venta pendiente (procesar ticket)
    */
   static async cobrarVentaPendiente(ventaId, metodoPago) {
-    console.log("📡 [VentaService] cobrarVentaPendiente - ID:", ventaId);
-    console.log("📡 [VentaService] cobrarVentaPendiente - Método:", metodoPago);
-
     const response = await fetch(`${API_URL}/${ventaId}/cobrar`, {
       method: "PUT",
       headers: this._getAuthHeaders(),
       body: JSON.stringify({ metodo_pago: metodoPago }),
     });
-
-    console.log(
-      "📡 [VentaService] cobrarVentaPendiente - Response status:",
-      response.status
-    );
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -256,7 +237,6 @@ export class VentaService {
     }
 
     const result = await response.json();
-    console.log("📡 [VentaService] cobrarVentaPendiente - Resultado:", result);
     return result;
   }
 }
