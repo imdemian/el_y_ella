@@ -643,6 +643,101 @@ router.put("/:id/cancelar", async (req, res) => {
 });
 
 /**
+ * PUT /ventas/:id/vendedor
+ * Actualizar el vendedor de una venta (solo admin)
+ */
+router.put("/:id/vendedor", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { usuario_id: nuevo_usuario_id } = req.body;
+    const usuario_actual = req.user;
+
+    // Verificar que sea admin
+    if (usuario_actual.rol !== "admin") {
+      return res.status(403).json({
+        message: "No tienes permisos para realizar esta acción",
+      });
+    }
+
+    // Validar que se proporcionó el nuevo usuario_id
+    if (!nuevo_usuario_id) {
+      return res.status(400).json({
+        message: "El usuario_id es requerido",
+      });
+    }
+
+    // Verificar que la venta existe
+    const { data: venta, error: errorVenta } = await supabase
+      .from("ventas")
+      .select("id, estado_venta, tienda_id")
+      .eq("id", id)
+      .single();
+
+    if (errorVenta || !venta) {
+      return res.status(404).json({
+        message: "Venta no encontrada",
+      });
+    }
+
+    // No permitir cambiar vendedor de ventas canceladas
+    if (venta.estado_venta === "cancelada") {
+      return res.status(400).json({
+        message: "No se puede cambiar el vendedor de una venta cancelada",
+      });
+    }
+
+    // Verificar que el nuevo usuario existe y pertenece a la tienda
+    const { data: usuario, error: errorUsuario } = await supabase
+      .from("usuarios")
+      .select("id, nombre, apellido, tienda_id")
+      .eq("id", nuevo_usuario_id)
+      .single();
+
+    if (errorUsuario || !usuario) {
+      return res.status(404).json({
+        message: "Usuario no encontrado",
+      });
+    }
+
+    if (usuario.tienda_id !== venta.tienda_id) {
+      return res.status(400).json({
+        message: "El usuario no pertenece a la tienda de la venta",
+      });
+    }
+
+    // Actualizar el vendedor de la venta
+    const { data: ventaActualizada, error: errorActualizar } = await supabase
+      .from("ventas")
+      .update({
+        usuario_id: nuevo_usuario_id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (errorActualizar) {
+      console.error("Error al actualizar vendedor:", errorActualizar);
+      return res.status(500).json({
+        message: "Error al actualizar el vendedor",
+      });
+    }
+
+    res.json({
+      message: "Vendedor actualizado exitosamente",
+      venta: ventaActualizada,
+      nuevo_vendedor: {
+        id: usuario.id,
+        nombre: `${usuario.nombre} ${usuario.apellido}`,
+      },
+    });
+  } catch (error) {
+    console.error("Error en PUT /ventas/:id/vendedor:", error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+});
+
+/**
  * GET /ventas/folio/:folio
  * Buscar una venta por folio
  */

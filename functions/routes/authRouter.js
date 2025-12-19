@@ -75,7 +75,7 @@ router.post("/login", async (req, res) => {
 // ==================
 router.post("/register", async (req, res) => {
   try {
-    const { email, password, nombre, apellido } = req.body;
+    const { email, password, nombre, apellido, rol, tienda_id } = req.body;
     if (!email || !password || !nombre) {
       return res
         .status(400)
@@ -106,7 +106,8 @@ router.post("/register", async (req, res) => {
         nombre: nombre,
         apellido: apellido,
         // No se inserta email, created_at, o updated_at. La BD se encarga.
-        // El 'rol' tomará el valor por defecto ('usuario') definido en la tabla.
+        rol: rol,
+        tienda_id: tienda_id || null,
       })
       .select()
       .single();

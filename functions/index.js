@@ -20,6 +20,7 @@ import supInventarioRouter from "./routes/inventarioRouter.js";
 import supComisionesRouter from "./routes/comisionesRouter.js";
 import supDescuentosRouter from "./routes/descuentosRouter.js";
 import supCodigosAccesoRouter from "./routes/codigosAccesoRouter.js";
+import supApartadosRouter from "./routes/apartadosRouter.js";
 import storageRouter from "./routes/storageRouter.js";
 
 dotenv.config();
@@ -42,6 +43,7 @@ app.use("/supabase/inventario", supInventarioRouter);
 app.use("/supabase/comisiones", supComisionesRouter);
 app.use("/supabase/descuentos", supDescuentosRouter);
 app.use("/supabase/codigos-acceso", supCodigosAccesoRouter);
+app.use("/supabase/apartados", supApartadosRouter);
 app.use("/supabase/storage", storageRouter);
 
 // Ruta base para verificar estado
