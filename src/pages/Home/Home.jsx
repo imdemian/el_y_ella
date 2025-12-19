@@ -44,10 +44,6 @@ const Home = () => {
       const fechaInicio = inicioDelDia.toISOString();
       const fechaFin = finDelDia.toISOString();
 
-      console.log("🔍 [Home] Filtrando ventas del día:");
-      console.log("   Inicio:", fechaInicio);
-      console.log("   Fin:", fechaFin);
-
       // Cargar tiendas y ventas del día en paralelo
       const [listaTiendas, ventasDelDia] = await Promise.all([
         TiendaService.obtenerTiendas(),
@@ -56,12 +52,6 @@ const Home = () => {
           fecha_fin: fechaFin,
         }),
       ]);
-
-      console.log("✅ [Home] Ventas recibidas:", ventasDelDia);
-      console.log(
-        "   Total de ventas del día:",
-        ventasDelDia?.data?.length || 0
-      );
 
       // Extraer el array de ventas de la respuesta
       const ventasArray = ventasDelDia?.data || [];
@@ -118,14 +108,14 @@ const Home = () => {
     }).format(cantidad);
   };
 
-  const formatearFecha = (fecha) => {
+  /* const formatearFecha = (fecha) => {
     const date = new Date(fecha);
     return date.toLocaleString("es-MX", {
       hour: "2-digit",
       minute: "2-digit",
       timeZone: "America/Mexico_City",
     });
-  };
+  }; */
 
   const formatearHora = (fecha) => {
     return new Date(fecha).toLocaleTimeString("es-MX", {

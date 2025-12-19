@@ -65,14 +65,6 @@ const Preventa = () => {
 
       setTiendas(listaTiendas);
 
-      console.log("📋 Tiendas cargadas:", listaTiendas);
-      console.log(
-        "👤 Usuario tienda_id (localStorage):",
-        tiendaUsuario,
-        "- Tipo:",
-        typeof tiendaUsuario
-      );
-
       if (tiendaUsuario && listaTiendas.length > 0) {
         // Si tiendaUsuario es un número (ID antiguo de Firebase), buscar la tienda UUID correspondiente
         // Si ya es un UUID string, usarlo directamente
@@ -82,12 +74,6 @@ const Preventa = () => {
         });
 
         if (tiendaEncontrada) {
-          console.log(
-            "✅ Tienda encontrada:",
-            tiendaEncontrada.id,
-            "-",
-            tiendaEncontrada.nombre
-          );
           setUsuarioTieneTienda(true);
           setTiendaSeleccionada(tiendaEncontrada.id); // Usar el UUID de la tienda encontrada
         } else {
@@ -99,9 +85,6 @@ const Preventa = () => {
           setTiendaSeleccionada(listaTiendas[0].id);
         }
       } else {
-        console.log(
-          "ℹ️ Usuario sin tienda asignada, usando primera disponible"
-        );
         setUsuarioTieneTienda(false);
         if (listaTiendas.length > 0) {
           setTiendaSeleccionada(listaTiendas[0].id);

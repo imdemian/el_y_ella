@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useContext } from "react";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -8,17 +8,21 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { VentaService } from "../../services/supabase/ventaService";
 import { ReportesService } from "../../utils/reportesService";
+import { AuthContext } from "../../utils/context";
 import HistorialVentas from "./components/HistorialVentas";
 import ComisionesVendedores from "./components/ComisionesVendedores";
 import ResumenTiendas from "./components/ResumenTiendas";
 import "./Historial.scss";
 
 const Historial = () => {
+  const { userRole } = useContext(AuthContext);
+  const esAdmin = userRole === "admin";
+
   // Estados para filtros
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
   const [filtroRapido, setFiltroRapido] = useState("hoy");
-  const [estadoFiltro, setEstadoFiltro] = useState(""); // '', 'completada', 'apartado', 'cancelada'
+  const [estadoFiltro, setEstadoFiltro] = useState(""); // '', 'completada', 'apartado', 'cancelada', 'pendiente', 'abono'
   const [metodoPagoFiltro, setMetodoPagoFiltro] = useState(""); // '', 'efectivo', 'tarjeta', 'transferencia'
   const [busquedaFolio, setBusquedaFolio] = useState("");
   const [tiendaFiltro, setTiendaFiltro] = useState(""); // Filtro por tienda
@@ -32,6 +36,11 @@ const Historial = () => {
   const [cargando, setCargando] = useState(false);
   const [ventaSeleccionada, setVentaSeleccionada] = useState(null);
   const [mostrarDetalleModal, setMostrarDetalleModal] = useState(false);
+
+  // Estados para editar vendedor
+  const [editandoVendedor, setEditandoVendedor] = useState(false);
+  const [vendedorSeleccionado, setVendedorSeleccionado] = useState("");
+  const [vendedoresTienda, setVendedoresTienda] = useState([]);
 
   // Estados para KPIs
   const [kpis, setKpis] = useState({
@@ -140,18 +149,6 @@ const Historial = () => {
         filtros.usuario_id = vendedorFiltro;
       }
 
-      console.log("🔍 [Historial] Filtrando ventas:");
-      console.log(
-        "   Fecha inicio (local):",
-        fechaInicio ? `${fechaInicio}T00:00:00` : "N/A"
-      );
-      console.log("   Fecha inicio (UTC):", filtros.fecha_inicio || "N/A");
-      console.log(
-        "   Fecha fin (local):",
-        fechaFin ? `${fechaFin}T23:59:59` : "N/A"
-      );
-      console.log("   Fecha fin (UTC):", filtros.fecha_fin || "N/A");
-
       const resultado = await VentaService.obtenerVentas(filtros);
       const ventasData = resultado.data || [];
 
@@ -257,6 +254,54 @@ const Historial = () => {
     }
   };
 
+  // Cargar vendedores de la tienda
+  const cargarVendedoresTienda = async () => {
+    try {
+      const { UsuariosService } = await import(
+        "../../services/supabase/usuariosService"
+      );
+      const lista = await UsuariosService.obtenerUsuarios();
+      setVendedoresTienda(lista);
+    } catch (error) {
+      console.error("Error al cargar vendedores:", error);
+      toast.error("Error al cargar vendedores");
+    }
+  };
+
+  // Iniciar edición de vendedor
+  const iniciarEdicionVendedor = async () => {
+    if (!ventaSeleccionada?.tienda_id) return;
+    setVendedorSeleccionado(ventaSeleccionada.usuario_id?.toString() || "");
+    await cargarVendedoresTienda(ventaSeleccionada.tienda_id);
+    setEditandoVendedor(true);
+  };
+
+  // Guardar cambio de vendedor
+  const guardarCambioVendedor = async () => {
+    if (!vendedorSeleccionado) {
+      toast.error("Selecciona un vendedor");
+      return;
+    }
+
+    try {
+      await VentaService.actualizarVendedor(
+        ventaSeleccionada.id,
+        parseInt(vendedorSeleccionado)
+      );
+      toast.success("Vendedor actualizado exitosamente");
+      setEditandoVendedor(false);
+      // Recargar detalle de venta
+      const ventaActualizada = await VentaService.obtenerVentaPorId(
+        ventaSeleccionada.id
+      );
+      setVentaSeleccionada(ventaActualizada);
+      cargarVentas(); // Recargar lista
+    } catch (error) {
+      console.error("Error al actualizar vendedor:", error);
+      toast.error(error.message || "Error al actualizar vendedor");
+    }
+  };
+
   // Formatear fecha - Convierte UTC a hora de México (CST/CDT)
   const formatearFecha = (fecha) => {
     const date = new Date(fecha);
@@ -285,6 +330,8 @@ const Historial = () => {
       completada: { clase: "badge-completada", texto: "Completada" },
       apartado: { clase: "badge-apartado", texto: "Apartado" },
       cancelada: { clase: "badge-cancelada", texto: "Cancelada" },
+      pendiente: { clase: "badge-pendiente", texto: "Pendiente" },
+      abono: { clase: "badge-abono", texto: "Abono" },
     };
     return badges[estado] || { clase: "", texto: estado };
   };
@@ -454,6 +501,8 @@ const Historial = () => {
               <option value="completada">Completadas</option>
               <option value="apartado">Apartados</option>
               <option value="cancelada">Canceladas</option>
+              <option value="pendiente">Pendientes</option>
+              <option value="abono">Abonos</option>
             </select>
           </div>
 
@@ -614,6 +663,7 @@ const Historial = () => {
           getBadgeEstado={getBadgeEstado}
           verDetalle={verDetalle}
           cancelarVenta={cancelarVenta}
+          esAdmin={esAdmin}
         />
       )}
 
@@ -692,6 +742,62 @@ const Historial = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Editar Vendedor (solo admin) */}
+              {esAdmin && (
+                <div className="detalle-seccion">
+                  <h3>Vendedor / Comisión</h3>
+                  {editandoVendedor ? (
+                    <div className="editar-vendedor-form">
+                      <div className="form-group">
+                        <label>Asignar comisión a:</label>
+                        <select
+                          value={vendedorSeleccionado}
+                          onChange={(e) =>
+                            setVendedorSeleccionado(e.target.value)
+                          }
+                          className="select-vendedor"
+                        >
+                          <option value="">Seleccionar vendedor...</option>
+                          {vendedoresTienda.map((vendedor) => (
+                            <option key={vendedor.id} value={vendedor.id}>
+                              {vendedor.nombre} {vendedor.apellido} -{" "}
+                              {vendedor.email}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="botones-edicion">
+                        <button
+                          className="btn-guardar"
+                          onClick={guardarCambioVendedor}
+                        >
+                          Guardar
+                        </button>
+                        <button
+                          className="btn-cancelar-edit"
+                          onClick={() => setEditandoVendedor(false)}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="vendedor-actual">
+                      <p>
+                        <strong>Vendedor actual:</strong> Usuario ID{" "}
+                        {ventaSeleccionada.usuario_id || "N/A"}
+                      </p>
+                      <button
+                        className="btn-editar-vendedor"
+                        onClick={iniciarEdicionVendedor}
+                      >
+                        Cambiar Vendedor
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Información del Cliente */}
               {ventaSeleccionada.cliente_info && (
@@ -793,7 +899,7 @@ const Historial = () => {
             </div>
 
             <div className="modal-footer">
-              {ventaSeleccionada.estado_venta !== "cancelada" && (
+              {esAdmin && ventaSeleccionada.estado_venta !== "cancelada" && (
                 <button
                   className="btn-modal btn-cancelar-venta"
                   onClick={() => cancelarVenta(ventaSeleccionada.id)}

@@ -33,21 +33,14 @@ const Caja = () => {
   // Cargar tickets pendientes
   const cargarTicketsPendientes = useCallback(async () => {
     if (!tiendaSeleccionada) {
-      console.log("⚠️ No hay tienda seleccionada, no se cargan tickets");
       return;
     }
 
-    console.log(
-      "🔄 Cargando tickets pendientes para tienda:",
-      tiendaSeleccionada
-    );
     setCargandoPendientes(true);
     try {
       const tickets = await VentaService.obtenerVentasPendientes(
         tiendaSeleccionada
       );
-      console.log("✅ Tickets pendientes cargados:", tickets.length, "tickets");
-      console.log("📋 Tickets:", tickets);
       setTicketsPendientes(tickets);
     } catch (error) {
       console.error("❌ Error al cargar tickets pendientes:", error);

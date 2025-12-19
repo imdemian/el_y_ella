@@ -10,10 +10,11 @@ import {
   faCog,
   faHistory,
   faHome,
+  faLayerGroup,
   faMoneyBill1,
   faShop,
   faSignOutAlt,
-  faTag,
+  // faTag,
   faTicket,
   faUsers,
   faWarehouse,
@@ -55,6 +56,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
       "Caja",
       "Ventas",
       "Historial",
+      "Apartados",
       "Etiquetas",
       "Productos",
       "Inventario",
@@ -67,13 +69,13 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
       "Caja",
       "Ventas",
       "Historial",
+      "Apartados",
       "Productos",
       "Inventario",
     ],
-    vendedor: ["Inicio", "Preventa"],
+    vendedor: ["Preventa", "Apartados"],
     empleado: ["Inicio", "Preventa"],
-    cajero: ["Inicio", "Caja", "Historial"],
-    TECNICO: ["Inicio", "Órdenes de Trabajo"],
+    cajero: ["Caja", "Apartados"],
     user: ["Inicio"],
   };
 
@@ -86,6 +88,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
     { title: "Caja", route: "/caja", icon: faCashRegister },
     { title: "Ventas", route: "/ventas", icon: faMoneyBill1 },
     { title: "Historial", route: "/historial", icon: faHistory },
+    { title: "Apartados", route: "/apartados", icon: faLayerGroup },
     { title: "Etiquetas", route: "/codigos-barra", icon: faBarcode },
     { title: "Productos", route: "/productos", icon: faBoxesStacked },
     { title: "Inventario", route: "/inventario", icon: faWarehouse },
@@ -101,12 +104,24 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   );
 
   // ==========================
-  // 🔽 Menú inferior (sin filtro)
+  // 🔽 Menú inferior (filtrado por rol)
   // ==========================
   const bottomMenuItems = [
-    { title: "Ajustes", route: "/ajustes", icon: faCog, action: null },
-    { title: "Salir", route: "/login", icon: faSignOutAlt, action: "logout" },
-  ];
+    {
+      title: "Ajustes",
+      route: "/ajustes",
+      icon: faCog,
+      action: null,
+      roles: ["admin"],
+    },
+    {
+      title: "Salir",
+      route: "/login",
+      icon: faSignOutAlt,
+      action: "logout",
+      roles: null,
+    },
+  ].filter((item) => !item.roles || item.roles.includes(user?.rol));
 
   return (
     <div className={`sidebar ${isCollapsed ? "collapsed" : ""}`}>

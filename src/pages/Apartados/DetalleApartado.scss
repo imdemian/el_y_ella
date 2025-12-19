@@ -1,0 +1,409 @@
+// src/pages/Apartados/DetalleApartado.scss
+
+.detalle-apartado-modal {
+  max-width: 800px;
+
+  .modal-header {
+    .header-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+
+      h2 {
+        font-family: monospace;
+      }
+    }
+  }
+
+  .loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    gap: 1rem;
+    color: var(--text-secondary, #6b7280);
+  }
+
+  // Resumen grid
+  .resumen-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .resumen-card {
+    padding: 1rem;
+    background: var(--bg-secondary, #f9fafb);
+    border-radius: 8px;
+    border: 1px solid var(--border-color, #e5e7eb);
+
+    h4 {
+      margin: 0 0 0.75rem 0;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--text-secondary, #6b7280);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    p {
+      margin: 0.35rem 0;
+      font-size: 0.875rem;
+
+      .label {
+        color: var(--text-secondary, #6b7280);
+        margin-right: 0.5rem;
+      }
+
+      svg {
+        margin-right: 0.35rem;
+        opacity: 0.5;
+        font-size: 0.75rem;
+      }
+    }
+
+    &.cliente {
+      .nombre {
+        font-weight: 600;
+        font-size: 1rem;
+        margin-bottom: 0.5rem;
+      }
+    }
+
+    &.montos {
+      .abonado {
+        color: var(--success-color, #10b981);
+        font-weight: 500;
+      }
+
+      .pendiente {
+        color: var(--warning-color, #f59e0b);
+        font-weight: 500;
+      }
+
+      .progreso-pago {
+        margin-top: 0.75rem;
+
+        .progreso-bar {
+          height: 6px;
+          background: var(--border-color, #e5e7eb);
+          border-radius: 3px;
+          overflow: hidden;
+
+          .progreso-fill {
+            height: 100%;
+            background: var(--success-color, #10b981);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+          }
+        }
+
+        .progreso-text {
+          display: block;
+          margin-top: 0.35rem;
+          font-size: 0.7rem;
+          color: var(--text-secondary, #6b7280);
+          text-align: right;
+        }
+      }
+    }
+  }
+
+  // Notas section
+  .notas-section {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: rgba(245, 158, 11, 0.05);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: 8px;
+
+    h4 {
+      margin: 0 0 0.5rem 0;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--warning-color, #f59e0b);
+    }
+
+    p {
+      margin: 0;
+      font-size: 0.875rem;
+      color: var(--text-primary, #1f2937);
+    }
+  }
+
+  // Tabs
+  .detail-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    padding-bottom: 0.5rem;
+
+    .tab {
+      padding: 0.5rem 1rem;
+      background: none;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary, #6b7280);
+      transition: all 0.15s;
+
+      &:hover {
+        background: var(--bg-secondary, #f9fafb);
+      }
+
+      &.active {
+        background: var(--primary-color, #6366f1);
+        color: white;
+      }
+    }
+  }
+
+  .tab-content {
+    min-height: 200px;
+
+    .empty-message {
+      text-align: center;
+      color: var(--text-secondary, #6b7280);
+      padding: 2rem;
+    }
+  }
+
+  // Items list
+  .items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+
+    .item-detail {
+      padding: 1rem;
+      background: var(--bg-secondary, #f9fafb);
+      border-radius: 8px;
+      border: 1px solid var(--border-color, #e5e7eb);
+
+      .item-header {
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+
+        .tipo-icon {
+          font-size: 1.25rem;
+          opacity: 0.7;
+
+          &.producto {
+            color: #3b82f6;
+          }
+          &.arreglo {
+            color: #f59e0b;
+          }
+          &.servicio {
+            color: #8b5cf6;
+          }
+        }
+
+        .item-info {
+          flex: 1;
+
+          .nombre {
+            font-weight: 600;
+            display: block;
+            margin-bottom: 0.25rem;
+          }
+
+          .sku {
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: var(--text-secondary, #6b7280);
+            display: block;
+            margin-bottom: 0.25rem;
+          }
+
+          .tipo-badge {
+            font-size: 0.65rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            text-transform: uppercase;
+            font-weight: 600;
+
+            &.producto {
+              background: rgba(59, 130, 246, 0.1);
+              color: #3b82f6;
+            }
+            &.arreglo {
+              background: rgba(245, 158, 11, 0.1);
+              color: #f59e0b;
+            }
+            &.servicio {
+              background: rgba(139, 92, 246, 0.1);
+              color: #8b5cf6;
+            }
+          }
+        }
+
+        .item-precio {
+          text-align: right;
+
+          .cantidad {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-secondary, #6b7280);
+          }
+
+          strong {
+            font-family: monospace;
+            font-size: 1rem;
+            color: var(--primary-color, #6366f1);
+          }
+        }
+      }
+
+      .item-medidas {
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
+        border-top: 1px dashed var(--border-color, #e5e7eb);
+
+        h5 {
+          margin: 0 0 0.5rem 0;
+          font-size: 0.7rem;
+          text-transform: uppercase;
+          color: var(--text-secondary, #6b7280);
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
+        }
+
+        .medidas-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+
+          span {
+            font-size: 0.75rem;
+            background: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            border: 1px solid var(--border-color, #e5e7eb);
+          }
+        }
+      }
+
+      .item-arreglo {
+        margin-top: 0.75rem;
+        padding: 0.5rem;
+        background: rgba(245, 158, 11, 0.05);
+        border-radius: 4px;
+
+        p {
+          margin: 0;
+          font-size: 0.8rem;
+          color: var(--text-secondary, #6b7280);
+        }
+      }
+    }
+  }
+
+  // Abonos list
+  .abonos-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+
+    .abono-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem;
+      background: var(--bg-secondary, #f9fafb);
+      border-radius: 8px;
+      border: 1px solid var(--border-color, #e5e7eb);
+
+      .abono-icon {
+        width: 36px;
+        height: 36px;
+        background: rgba(16, 185, 129, 0.1);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        svg {
+          color: var(--success-color, #10b981);
+        }
+      }
+
+      .abono-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+
+        .folio {
+          font-family: monospace;
+          font-weight: 600;
+          font-size: 0.875rem;
+        }
+
+        .fecha {
+          font-size: 0.75rem;
+          color: var(--text-secondary, #6b7280);
+        }
+
+        .metodo {
+          font-size: 0.7rem;
+          text-transform: uppercase;
+          color: var(--text-secondary, #6b7280);
+        }
+      }
+
+      .abono-monto {
+        strong {
+          font-family: monospace;
+          font-size: 1.1rem;
+          color: var(--success-color, #10b981);
+        }
+      }
+    }
+  }
+}
+
+// Badge styles
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+
+  &.badge-primary {
+    background: rgba(99, 102, 241, 0.1);
+    color: #6366f1;
+  }
+
+  &.badge-success {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+  }
+
+  &.badge-info {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+  }
+
+  &.badge-secondary {
+    background: rgba(107, 114, 128, 0.1);
+    color: #6b7280;
+  }
+
+  &.badge-danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+  }
+}

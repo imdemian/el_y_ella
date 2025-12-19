@@ -18,6 +18,7 @@ const HistorialVentas = ({
   getBadgeEstado,
   verDetalle,
   cancelarVenta,
+  esAdmin,
 }) => {
   // Filtrar ventas por búsqueda de folio
   const ventasFiltradas = ventas.filter((venta) => {
@@ -105,7 +106,7 @@ const HistorialVentas = ({
                         >
                           <FontAwesomeIcon icon={faEye} />
                         </button>
-                        {venta.estado_venta !== "cancelada" && (
+                        {esAdmin && venta.estado_venta !== "cancelada" && (
                           <button
                             className="btn-accion btn-cancelar"
                             onClick={() => cancelarVenta(venta.id)}

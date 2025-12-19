@@ -1,4 +1,5 @@
 import Ajustes from "../pages/Ajustes/Ajustes";
+import Apartados from "../pages/Apartados/Apartados";
 import CodigosBarra from "../pages/CodigosBarra/CodigosBarra";
 import Empleados from "../pages/Empleados/Empleados";
 import Historial from "../pages/Historial/Historial";
@@ -20,7 +21,7 @@ const configRouting = [
   {
     path: "/",
     page: Home,
-    roles: ["admin", "manager", "tecnico"],
+    roles: ["admin", "manager", "empleado", "cajero", "user"],
   },
   {
     path: "/registro-productos",
@@ -96,6 +97,11 @@ const configRouting = [
     path: "/historial",
     page: Historial,
     roles: ["admin"],
+  },
+  {
+    path: "/apartados",
+    page: Apartados,
+    roles: ["admin", "manager", "cajero"],
   },
 ];
 

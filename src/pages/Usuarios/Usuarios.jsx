@@ -76,10 +76,6 @@ const Usuarios = () => {
 
     // Debug: Verificar token
     const token = localStorage.getItem("auth_token");
-    const user = localStorage.getItem("app_user");
-
-    console.log("🔑 Token presente:", !!token);
-    console.log("👤 Usuario:", user ? JSON.parse(user) : "No hay usuario");
 
     if (!token) {
       setError("No estás autenticado. Por favor, inicia sesión nuevamente.");
