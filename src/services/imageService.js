@@ -1,11 +1,11 @@
-// src/services/imageService.js
 import { supabase } from "../supabase/supabaseConfig";
 
 /**
  * Servicio para manejo de imágenes con Supabase Storage
  */
 export class ImageService {
-  static bucketName = "productos";
+  // ✅ CORREGIDO: Nombre exacto del bucket en mayúsculas
+  static bucketName = "PRODUCTOS";
 
   /**
    * Redimensiona una imagen en el cliente para crear thumbnail
@@ -83,34 +83,7 @@ export class ImageService {
   }
 
   /**
-   * Solicita una signed URL al backend para subir imagen
-   * @param {string} path - Ruta en Storage
-   * @returns {Promise<{uploadUrl: string, publicUrl: string}>}
-   */
-  static async getSignedUploadUrl(path) {
-    const token = localStorage.getItem("auth_token");
-    const API_URL =
-      "http://localhost:5001/elyella-d411f/us-central1/api/supabase";
-
-    const response = await fetch(`${API_URL}/storage/signed-url`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ path }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message || "Error al obtener URL firmada");
-    }
-
-    return response.json();
-  }
-
-  /**
-   * Sube una imagen y su thumbnail a Supabase Storage usando signed URLs
+   * Sube una imagen y su thumbnail directamente a Supabase Storage
    * @param {File} file - Archivo de imagen
    * @param {string} path - Ruta en Storage (ej: productos/abc123/principal)
    * @returns {Promise<{original: string, thumbnail: string}>} - URLs de las imágenes
@@ -120,55 +93,74 @@ export class ImageService {
       // Validar imagen
       this.validateImage(file);
 
+      console.log("📤 Subiendo imagen:", {
+        path,
+        fileName: file.name,
+        size: file.size,
+        bucket: this.bucketName,
+      });
+
       // Crear thumbnail
       const thumbnailBlob = await this.createThumbnail(file);
 
-      // Generar nombres únicos
+      // Generar nombres únicos con timestamp
       const timestamp = Date.now();
       const originalPath = `${path}_${timestamp}.jpg`;
       const thumbnailPath = `${path}_${timestamp}_thumb.jpg`;
 
-      // Obtener signed URLs del backend
-      const [originalSigned, thumbnailSigned] = await Promise.all([
-        this.getSignedUploadUrl(originalPath),
-        this.getSignedUploadUrl(thumbnailPath),
-      ]);
+      console.log("📁 Rutas generadas:", { originalPath, thumbnailPath });
 
-      // Subir imagen original usando signed URL
-      const uploadOriginal = await fetch(originalSigned.uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: {
-          "Content-Type": file.type,
-          "x-upsert": "true",
-        },
-      });
+      // Subir imagen original a Supabase Storage
+      const { data: _originalData, error: originalError } =
+        await supabase.storage
+          .from(this.bucketName)
+          .upload(originalPath, file, {
+            cacheControl: "3600",
+            upsert: true,
+            contentType: file.type,
+          });
 
-      if (!uploadOriginal.ok) {
-        throw new Error("Error al subir imagen original");
+      if (originalError) {
+        console.error("❌ Error al subir imagen original:", originalError);
+        throw new Error(`Error al subir imagen: ${originalError.message}`);
       }
 
-      // Subir thumbnail usando signed URL
-      const uploadThumbnail = await fetch(thumbnailSigned.uploadUrl, {
-        method: "PUT",
-        body: thumbnailBlob,
-        headers: {
-          "Content-Type": "image/jpeg",
-          "x-upsert": "true",
-        },
-      });
+      // Subir thumbnail a Supabase Storage
+      const { data: _thumbnailData, error: thumbnailError } =
+        await supabase.storage
+          .from(this.bucketName)
+          .upload(thumbnailPath, thumbnailBlob, {
+            cacheControl: "3600",
+            upsert: true,
+            contentType: "image/jpeg",
+          });
 
-      if (!uploadThumbnail.ok) {
-        throw new Error("Error al subir thumbnail");
+      if (thumbnailError) {
+        // Si falla el thumbnail, intentamos borrar la original para no dejar basura
+        await supabase.storage.from(this.bucketName).remove([originalPath]);
+        console.error("❌ Error al subir thumbnail:", thumbnailError);
+        throw new Error(`Error al subir thumbnail: ${thumbnailError.message}`);
       }
 
-      // Retornar las URLs públicas que ya vienen del backend
-      return {
-        original: originalSigned.publicUrl,
-        thumbnail: thumbnailSigned.publicUrl,
+      // Obtener URLs públicas
+      const { data: originalUrlData } = supabase.storage
+        .from(this.bucketName)
+        .getPublicUrl(originalPath);
+
+      const { data: thumbnailUrlData } = supabase.storage
+        .from(this.bucketName)
+        .getPublicUrl(thumbnailPath);
+
+      const urls = {
+        original: originalUrlData.publicUrl,
+        thumbnail: thumbnailUrlData.publicUrl,
       };
+
+      console.log("🔗 URLs generadas:", urls);
+
+      return urls;
     } catch (error) {
-      console.error("Error al subir imagen:", error);
+      console.error("❌ Error al subir imagen:", error);
       throw error;
     }
   }
@@ -196,6 +188,7 @@ export class ImageService {
   static async uploadProductoImagen(productoId, nombreProducto, file) {
     const nombreSanitizado = this.sanitizeFileName(nombreProducto);
     const carpeta = `${productoId}_${nombreSanitizado}`;
+    // Nota: 'productos' aquí es el nombre de la carpeta DENTRO del bucket, no el bucket en sí.
     const path = `productos/${carpeta}/principal`;
     return this.uploadImage(file, path);
   }
@@ -231,26 +224,26 @@ export class ImageService {
     try {
       if (!url) return;
 
-      // Extraer el path de la URL pública de Supabase
-      // URL format: https://[project].supabase.co/storage/v1/object/public/productos/path/to/file.jpg
       const urlObj = new URL(url);
       const pathParts = urlObj.pathname.split(
         `/object/public/${this.bucketName}/`
       );
 
       if (pathParts.length > 1) {
-        const filePath = pathParts[1];
+        const filePath = decodeURIComponent(pathParts[1]);
+
         const { error } = await supabase.storage
           .from(this.bucketName)
           .remove([filePath]);
 
         if (error) {
-          console.error("Error al eliminar imagen:", error);
+          console.error("Error al eliminar imagen de storage:", error);
+        } else {
+          console.log("Imagen eliminada correctamente:", filePath);
         }
       }
     } catch (error) {
-      console.error("Error al eliminar imagen:", error);
-      // No lanzar error si la imagen no existe
+      console.error("Error al procesar eliminación de imagen:", error);
     }
   }
 
@@ -266,8 +259,9 @@ export class ImageService {
       this.deleteImage(thumbnailUrl),
     ]);
   }
+
   /**
-   * Elimina todas las imágenes de un producto
+   * Elimina todas las imágenes de un producto (carpeta completa)
    * @param {string} productoId - ID del producto
    * @param {string} nombreProducto - Nombre del producto
    * @returns {Promise<void>}
@@ -277,35 +271,47 @@ export class ImageService {
       const nombreSanitizado = this.sanitizeFileName(nombreProducto);
       const carpeta = `${productoId}_${nombreSanitizado}`;
 
-      // Listar todos los archivos en la carpeta del producto
       const { data: files, error } = await supabase.storage
         .from(this.bucketName)
-        .list(`productos/${carpeta}`, {
-          limit: 100,
-          offset: 0,
-        });
+        .list(`productos/${carpeta}`, { limit: 100 });
 
       if (error) {
         console.error("Error al listar imágenes:", error);
         return;
       }
 
-      if (files && files.length > 0) {
-        // Crear array de paths para eliminar
-        const filePaths = files.map(
-          (file) => `productos/${carpeta}/${file.name}`
-        );
+      const { data: variantFiles, error: _variantError } =
+        await supabase.storage
+          .from(this.bucketName)
+          .list(`productos/${carpeta}/variantes`, { limit: 100 });
 
+      let allFilesToRemove = [];
+
+      if (files && files.length > 0) {
+        allFilesToRemove = [
+          ...allFilesToRemove,
+          ...files.map((f) => `productos/${carpeta}/${f.name}`),
+        ];
+      }
+
+      if (variantFiles && variantFiles.length > 0) {
+        allFilesToRemove = [
+          ...allFilesToRemove,
+          ...variantFiles.map(
+            (f) => `productos/${carpeta}/variantes/${f.name}`
+          ),
+        ];
+      }
+
+      if (allFilesToRemove.length > 0) {
         const { error: deleteError } = await supabase.storage
           .from(this.bucketName)
-          .remove(filePaths);
+          .remove(allFilesToRemove);
 
         if (deleteError) {
           console.error("Error al eliminar imágenes:", deleteError);
         } else {
-          console.log(
-            `✅ ${files.length} imágenes eliminadas del producto ${productoId}`
-          );
+          console.log(`✅ ${allFilesToRemove.length} imágenes eliminadas.`);
         }
       }
     } catch (error) {

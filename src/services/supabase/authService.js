@@ -12,7 +12,6 @@ export class AuthService {
     });
 
     const data = await response.json();
-    console.log("Datos de login:", data);
 
     // Lanza un error con el mensaje del servidor si el login falla.
     if (!response.ok) {
