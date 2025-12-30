@@ -51,6 +51,21 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
   const [variantes, setVariantes] = useState([]);
   const [costoVariante, setCostoVariante] = useState("");
   const [aplicarPrecioVariantes, setAplicarPrecioVariantes] = useState(false);
+  const [codigoUnicoProducto, setCodigoUnicoProducto] = useState("");
+
+  // Estados para tallas y colores personalizados
+  const [tallasPersonalizadas, setTallasPersonalizadas] = useState([]);
+  const [coloresPersonalizados, setColoresPersonalizados] = useState([]);
+  const [inputTallaPersonalizada, setInputTallaPersonalizada] = useState("");
+  const [inputColorPersonalizado, setInputColorPersonalizado] = useState("");
+
+  // Estados para atributo personalizado (diseño, aroma, sabor, etc.)
+  const [nombreAtributoPersonalizado, setNombreAtributoPersonalizado] =
+    useState("Diseño");
+  const [atributosPersonalizados, setAtributosPersonalizados] = useState([]);
+  const [atributosSeleccionados, setAtributosSeleccionados] = useState([]);
+  const [inputAtributoPersonalizado, setInputAtributoPersonalizado] =
+    useState("");
 
   // Estados para imágenes
   const [imagenPrincipal, setImagenPrincipal] = useState(null); // File object
@@ -58,6 +73,18 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
   const [imagenPrincipalUrl, setImagenPrincipalUrl] = useState(""); // URL guardada en Firestore
   const [subiendoImagen, setSubiendoImagen] = useState(false);
   const [imagenesVariantes, setImagenesVariantes] = useState({}); // { varianteId: { file, preview, url } }
+
+  // Función para generar código único alfanumérico
+  const generarCodigoUnico = () => {
+    const caracteres = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Sin 0, O, I, 1 para evitar confusión
+    let codigo = "";
+    for (let i = 0; i < 4; i++) {
+      codigo += caracteres.charAt(
+        Math.floor(Math.random() * caracteres.length)
+      );
+    }
+    return codigo;
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -75,6 +102,10 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
             producto.precio_base != null ? String(producto.precio_base) : ""
           );
           setMarca(producto.marca || "");
+          // Usar ID del producto existente o generar código
+          setCodigoUnicoProducto(
+            producto.id ? String(producto.id) : generarCodigoUnico()
+          );
 
           // Cargar imagen existente
           if (producto.imagen_thumbnail_url || producto.imagen_url) {
@@ -130,6 +161,11 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
             setColoresSeleccionados(Array.from(coloresExistentes));
             setImagenesVariantes(imagenesVariantesMap);
           }
+        } else {
+          // Producto nuevo: generar código único
+          if (!codigoUnicoProducto) {
+            setCodigoUnicoProducto(generarCodigoUnico());
+          }
         }
       } catch (error) {
         console.error("Error cargando datos:", error);
@@ -140,11 +176,18 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
     return () => {
       mounted = false;
     };
-  }, [producto]);
+  }, [producto, codigoUnicoProducto]);
 
   const generarVariantes = () => {
-    if (tallasSeleccionadas.length === 0 && coloresSeleccionados.length === 0) {
-      toast.warning("Selecciona al menos una talla o un color");
+    if (
+      tallasSeleccionadas.length === 0 &&
+      coloresSeleccionados.length === 0 &&
+      atributosSeleccionados.length === 0
+    ) {
+      toast.warning(
+        "Selecciona al menos una talla, color o " +
+          nombreAtributoPersonalizado.toLowerCase()
+      );
       return;
     }
     if (!precioBase || parseFloat(precioBase) <= 0) {
@@ -152,18 +195,59 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
       return;
     }
     const nuevasVariantes = [];
-    const prefijo = nombre ? nombre.substring(0, 3).toUpperCase() : "PRO";
 
-    if (tallasSeleccionadas.length > 0 && coloresSeleccionados.length === 0) {
+    // Generar prefijo: si hay varias palabras, tomar primera letra de cada una
+    // Si es una sola palabra, tomar las primeras 3 letras
+    let prefijo = "PRO";
+    if (nombre) {
+      const palabras = nombre.trim().split(/\s+/); // Dividir por espacios
+      if (palabras.length > 1) {
+        // Varias palabras: primera letra de cada una
+        prefijo = palabras
+          .map((p) => p.charAt(0))
+          .join("")
+          .toUpperCase();
+      } else {
+        // Una sola palabra: primeras 3 letras
+        prefijo = nombre.substring(0, 3).toUpperCase();
+      }
+    }
+
+    const codigo = codigoUnicoProducto || generarCodigoUnico();
+
+    // Guardar el código si es nuevo
+    if (!codigoUnicoProducto) {
+      setCodigoUnicoProducto(codigo);
+    }
+
+    // Caso: Solo atributo personalizado
+    if (
+      atributosSeleccionados.length > 0 &&
+      tallasSeleccionadas.length === 0 &&
+      coloresSeleccionados.length === 0
+    ) {
+      atributosSeleccionados.forEach((atributo, index) => {
+        const claveAtributo = nombreAtributoPersonalizado
+          .toLowerCase()
+          .replace(/\s+/g, "_");
+        nuevasVariantes.push({
+          id: "temp-" + Date.now() + "-" + index,
+          sku: `${prefijo}-${codigo}-${atributo.substring(0, 4).toUpperCase()}`,
+          atributos: { [claveAtributo]: atributo },
+          precio: precioBase,
+          costo: costoVariante || "",
+          activo: true,
+        });
+      });
+    } else if (
+      tallasSeleccionadas.length > 0 &&
+      coloresSeleccionados.length === 0 &&
+      atributosSeleccionados.length === 0
+    ) {
       tallasSeleccionadas.forEach((talla, index) => {
         nuevasVariantes.push({
           id: "temp-" + Date.now() + "-" + index,
-          sku:
-            prefijo +
-            "-" +
-            String(index + 1).padStart(3, "0") +
-            "-" +
-            talla.toUpperCase(),
+          sku: `${prefijo}-${codigo}-${talla.toUpperCase()}`,
           atributos: { talla: talla },
           precio: precioBase,
           costo: costoVariante || "",
@@ -172,17 +256,13 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
       });
     } else if (
       coloresSeleccionados.length > 0 &&
-      tallasSeleccionadas.length === 0
+      tallasSeleccionadas.length === 0 &&
+      atributosSeleccionados.length === 0
     ) {
       coloresSeleccionados.forEach((color, index) => {
         nuevasVariantes.push({
           id: "temp-" + Date.now() + "-" + index,
-          sku:
-            prefijo +
-            "-" +
-            String(index + 1).padStart(3, "0") +
-            "-" +
-            color.substring(0, 2).toUpperCase(),
+          sku: `${prefijo}-${codigo}-${color.substring(0, 2).toUpperCase()}`,
           atributos: { color: color },
           precio: precioBase,
           costo: costoVariante || "",
@@ -190,25 +270,51 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
         });
       });
     } else {
-      let contador = 1;
-      tallasSeleccionadas.forEach((talla) => {
-        coloresSeleccionados.forEach((color) => {
-          nuevasVariantes.push({
-            id: "temp-" + Date.now() + "-" + contador,
-            sku:
-              prefijo +
-              "-" +
-              String(contador).padStart(3, "0") +
-              "-" +
-              talla.toUpperCase() +
-              "-" +
-              color.substring(0, 2).toUpperCase(),
-            atributos: { talla: talla, color: color },
-            precio: precioBase,
-            costo: costoVariante || "",
-            activo: true,
+      // Combinaciones con múltiples atributos
+      const claveAtributo = nombreAtributoPersonalizado
+        .toLowerCase()
+        .replace(/\s+/g, "_");
+      const usarTallas = tallasSeleccionadas.length > 0;
+      const usarColores = coloresSeleccionados.length > 0;
+      const usarAtributos = atributosSeleccionados.length > 0;
+
+      const tallas = usarTallas ? tallasSeleccionadas : [""];
+      const colores = usarColores ? coloresSeleccionados : [""];
+      const atributos = usarAtributos ? atributosSeleccionados : [""];
+
+      tallas.forEach((talla) => {
+        colores.forEach((color) => {
+          atributos.forEach((atributo) => {
+            // Construir SKU dinámicamente
+            let skuParts = [prefijo, codigo];
+            let atributosObj = {};
+            let idParts = [Date.now()];
+
+            if (talla) {
+              skuParts.push(talla.toUpperCase());
+              atributosObj.talla = talla;
+              idParts.push(talla);
+            }
+            if (color) {
+              skuParts.push(color.substring(0, 2).toUpperCase());
+              atributosObj.color = color;
+              idParts.push(color);
+            }
+            if (atributo) {
+              skuParts.push(atributo.substring(0, 4).toUpperCase());
+              atributosObj[claveAtributo] = atributo;
+              idParts.push(atributo);
+            }
+
+            nuevasVariantes.push({
+              id: `temp-${idParts.join("-")}`,
+              sku: skuParts.join("-"),
+              atributos: atributosObj,
+              precio: precioBase,
+              costo: costoVariante || "",
+              activo: true,
+            });
           });
-          contador++;
         });
       });
     }
@@ -232,6 +338,86 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
     });
   };
 
+  const agregarTallaPersonalizada = () => {
+    const talla = inputTallaPersonalizada.trim().toUpperCase();
+    if (!talla) {
+      toast.warning("Ingresa una talla");
+      return;
+    }
+    if (
+      TALLAS_DISPONIBLES.includes(talla) ||
+      tallasPersonalizadas.includes(talla)
+    ) {
+      toast.warning("Esta talla ya existe");
+      return;
+    }
+    setTallasPersonalizadas([...tallasPersonalizadas, talla]);
+    setTallasSeleccionadas([...tallasSeleccionadas, talla]);
+    setInputTallaPersonalizada("");
+    toast.success(`Talla "${talla}" agregada`);
+  };
+
+  const agregarColorPersonalizado = () => {
+    const color = inputColorPersonalizado.trim();
+    if (!color) {
+      toast.warning("Ingresa un color");
+      return;
+    }
+    if (
+      COLORES_DISPONIBLES.includes(color) ||
+      coloresPersonalizados.includes(color)
+    ) {
+      toast.warning("Este color ya existe");
+      return;
+    }
+    setColoresPersonalizados([...coloresPersonalizados, color]);
+    setColoresSeleccionados([...coloresSeleccionados, color]);
+    setInputColorPersonalizado("");
+    toast.success(`Color "${color}" agregado`);
+  };
+
+  const eliminarTallaPersonalizada = (talla) => {
+    setTallasPersonalizadas(tallasPersonalizadas.filter((t) => t !== talla));
+    setTallasSeleccionadas(tallasSeleccionadas.filter((t) => t !== talla));
+  };
+
+  const eliminarColorPersonalizado = (color) => {
+    setColoresPersonalizados(coloresPersonalizados.filter((c) => c !== color));
+    setColoresSeleccionados(coloresSeleccionados.filter((c) => c !== color));
+  };
+
+  const agregarAtributoPersonalizado = () => {
+    const atributo = inputAtributoPersonalizado.trim();
+    if (!atributo) {
+      toast.warning("Ingresa un valor para " + nombreAtributoPersonalizado);
+      return;
+    }
+    if (atributosPersonalizados.includes(atributo)) {
+      toast.warning("Este valor ya existe");
+      return;
+    }
+    setAtributosPersonalizados([...atributosPersonalizados, atributo]);
+    setAtributosSeleccionados([...atributosSeleccionados, atributo]);
+    setInputAtributoPersonalizado("");
+    toast.success(`${nombreAtributoPersonalizado} "${atributo}" agregado`);
+  };
+
+  const toggleAtributoPersonalizado = (atributo) => {
+    setAtributosSeleccionados((prev) => {
+      const existe = prev.includes(atributo);
+      return existe ? prev.filter((a) => a !== atributo) : [...prev, atributo];
+    });
+  };
+
+  const eliminarAtributoPersonalizado = (atributo) => {
+    setAtributosPersonalizados(
+      atributosPersonalizados.filter((a) => a !== atributo)
+    );
+    setAtributosSeleccionados(
+      atributosSeleccionados.filter((a) => a !== atributo)
+    );
+  };
+
   const actualizarVariante = (index, campo, valor) => {
     const nuevasVariantes = [...variantes];
     nuevasVariantes[index][campo] = valor;
@@ -243,6 +429,7 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
       setVariantes([]);
       setTallasSeleccionadas([]);
       setColoresSeleccionados([]);
+      setAtributosSeleccionados([]);
       toast.info("Variantes eliminadas");
     }
   };
@@ -420,6 +607,24 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
         }
         setSubiendoImagen(false);
 
+        // Si el producto no tiene imagen pero hay variantes con imágenes, usar la primera
+        if (
+          !productoPayload.imagen_url &&
+          variantesConImagenes.some((v) => v.imagen_url)
+        ) {
+          const primeraVarianteConImagen = variantesConImagenes.find(
+            (v) => v.imagen_url
+          );
+          if (primeraVarianteConImagen) {
+            productoPayload.imagen_url = primeraVarianteConImagen.imagen_url;
+            productoPayload.imagen_thumbnail_url =
+              primeraVarianteConImagen.imagen_thumbnail_url;
+            console.log(
+              "📸 Usando imagen de variante como imagen principal del producto"
+            );
+          }
+        }
+
         // Actualizar producto con variantes
         const variantesFormateadas = variantesConImagenes.map((v) => ({
           sku: v.sku.trim(),
@@ -462,7 +667,6 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
         // Si se creó el producto, subir imágenes
         if (resultado?.id) {
           const actualizaciones = {};
-          let hayActualizaciones = false;
 
           // Subir imagen principal
           if (imagenPrincipal) {
@@ -484,7 +688,6 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
               console.log("✅ Imagen subida exitosamente:", urls);
               actualizaciones.imagen_url = urls.original;
               actualizaciones.imagen_thumbnail_url = urls.thumbnail;
-              hayActualizaciones = true;
             } catch (imgError) {
               console.error("❌ Error subiendo imagen principal:", imgError);
               toast.warning("Error al subir imagen principal");
@@ -493,13 +696,14 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
             console.log("⚠️ No hay imagen principal para subir");
           }
 
+          // Declarar array para variantes con imágenes
+          const variantesConImagenes = [];
+
           // Subir imágenes de variantes si las variantes ya fueron creadas
           if (
             resultado.variantes_producto &&
             resultado.variantes_producto.length > 0
           ) {
-            const variantesConImagenes = [];
-
             for (const varianteCreada of resultado.variantes_producto) {
               // Buscar la variante local por SKU para obtener su imagen
               const varianteLocal = variantes.find(
@@ -526,7 +730,6 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
                     imagen_url: urls.original,
                     imagen_thumbnail_url: urls.thumbnail,
                   });
-                  hayActualizaciones = true;
                 } catch (error) {
                   console.error(
                     `Error subiendo imagen de variante ${varianteCreada.sku}:`,
@@ -554,17 +757,35 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
             }
           }
 
-          // Actualizar producto con las URLs de las imágenes principales
-          if (hayActualizaciones && actualizaciones.imagen_url) {
+          // Si el producto no tiene imagen pero hay variantes con imágenes, usar la primera
+          if (!actualizaciones.imagen_url && variantesConImagenes.length > 0) {
+            const primeraVarianteConImagen = variantesConImagenes[0];
+            actualizaciones.imagen_url = primeraVarianteConImagen.imagen_url;
+            actualizaciones.imagen_thumbnail_url =
+              primeraVarianteConImagen.imagen_thumbnail_url;
+            console.log(
+              "📸 Usando imagen de variante como imagen principal del producto"
+            );
+          }
+
+          // Actualizar producto con las URLs de las imágenes principales solo si hay
+          if (
+            actualizaciones.imagen_url ||
+            actualizaciones.imagen_thumbnail_url
+          ) {
             try {
               await ProductoService.actualizarProducto(
                 resultado.id,
                 actualizaciones
               );
+              console.log("✅ Producto actualizado con imágenes principales");
             } catch (updateError) {
-              console.error("Error actualizando imágenes:", updateError);
+              console.error(
+                "Error actualizando imágenes principales:",
+                updateError
+              );
               toast.warning(
-                "Producto creado pero error al actualizar imágenes"
+                "Producto creado pero error al actualizar imagen principal"
               );
             }
           }
@@ -787,6 +1008,26 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
               <label className="selector-label">
                 <FontAwesomeIcon icon={faTags} /> Tallas Disponibles
               </label>
+              <div className="input-personalizado">
+                <input
+                  type="text"
+                  className="form-control"
+                  value={inputTallaPersonalizada}
+                  onChange={(e) => setInputTallaPersonalizada(e.target.value)}
+                  onKeyPress={(e) =>
+                    e.key === "Enter" &&
+                    (e.preventDefault(), agregarTallaPersonalizada())
+                  }
+                  placeholder="Agregar talla personalizada (ej: 32, 34, 2XL)"
+                />
+                <button
+                  type="button"
+                  className="btn-agregar-personalizado"
+                  onClick={agregarTallaPersonalizada}
+                >
+                  + Agregar
+                </button>
+              </div>
               <div className="atributos-grid">
                 {TALLAS_DISPONIBLES.map((talla) => (
                   <button
@@ -804,6 +1045,31 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
                     {talla}
                   </button>
                 ))}
+                {tallasPersonalizadas.map((talla) => (
+                  <button
+                    key={talla}
+                    type="button"
+                    className={
+                      "atributo-btn personalizado " +
+                      (tallasSeleccionadas.includes(talla) ? "selected" : "")
+                    }
+                    onClick={() => toggleTalla(talla)}
+                  >
+                    {tallasSeleccionadas.includes(talla) && (
+                      <FontAwesomeIcon icon={faCheck} className="check-icon" />
+                    )}
+                    {talla}
+                    <span
+                      className="btn-eliminar-personalizado"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        eliminarTallaPersonalizada(talla);
+                      }}
+                    >
+                      ×
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -811,6 +1077,26 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
               <label className="selector-label">
                 <FontAwesomeIcon icon={faTags} /> Colores Disponibles
               </label>
+              <div className="input-personalizado">
+                <input
+                  type="text"
+                  className="form-control"
+                  value={inputColorPersonalizado}
+                  onChange={(e) => setInputColorPersonalizado(e.target.value)}
+                  onKeyPress={(e) =>
+                    e.key === "Enter" &&
+                    (e.preventDefault(), agregarColorPersonalizado())
+                  }
+                  placeholder="Agregar color personalizado (ej: Fucsia, Azul Rey, Hueso)"
+                />
+                <button
+                  type="button"
+                  className="btn-agregar-personalizado"
+                  onClick={agregarColorPersonalizado}
+                >
+                  + Agregar
+                </button>
+              </div>
               <div className="atributos-grid">
                 {COLORES_DISPONIBLES.map((color) => (
                   <button
@@ -828,7 +1114,109 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
                     {color}
                   </button>
                 ))}
+                {coloresPersonalizados.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={
+                      "atributo-btn personalizado " +
+                      (coloresSeleccionados.includes(color) ? "selected" : "")
+                    }
+                    onClick={() => toggleColor(color)}
+                  >
+                    {coloresSeleccionados.includes(color) && (
+                      <FontAwesomeIcon icon={faCheck} className="check-icon" />
+                    )}
+                    {color}
+                    <span
+                      className="btn-eliminar-personalizado"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        eliminarColorPersonalizado(color);
+                      }}
+                    >
+                      ×
+                    </span>
+                  </button>
+                ))}
               </div>
+            </div>
+
+            <div className="atributos-selector">
+              <div className="selector-label-con-input">
+                <label className="selector-label">
+                  <FontAwesomeIcon icon={faTags} />
+                  <input
+                    type="text"
+                    className="nombre-atributo-input"
+                    value={nombreAtributoPersonalizado}
+                    onChange={(e) =>
+                      setNombreAtributoPersonalizado(e.target.value)
+                    }
+                    placeholder="Nombre del atributo"
+                  />
+                </label>
+                <small className="info-text-small">
+                  Ejemplo: "Diseño", "Aroma", "Sabor", "Material", etc.
+                </small>
+              </div>
+              <div className="input-personalizado">
+                <input
+                  type="text"
+                  className="form-control"
+                  value={inputAtributoPersonalizado}
+                  onChange={(e) =>
+                    setInputAtributoPersonalizado(e.target.value)
+                  }
+                  onKeyPress={(e) =>
+                    e.key === "Enter" &&
+                    (e.preventDefault(), agregarAtributoPersonalizado())
+                  }
+                  placeholder={`Agregar ${nombreAtributoPersonalizado.toLowerCase()} (ej: Floral, Navideño, Minimalista)`}
+                />
+                <button
+                  type="button"
+                  className="btn-agregar-personalizado"
+                  onClick={agregarAtributoPersonalizado}
+                >
+                  + Agregar
+                </button>
+              </div>
+              <div className="atributos-grid">
+                {atributosPersonalizados.map((atributo) => (
+                  <button
+                    key={atributo}
+                    type="button"
+                    className={
+                      "atributo-btn personalizado " +
+                      (atributosSeleccionados.includes(atributo)
+                        ? "selected"
+                        : "")
+                    }
+                    onClick={() => toggleAtributoPersonalizado(atributo)}
+                  >
+                    {atributosSeleccionados.includes(atributo) && (
+                      <FontAwesomeIcon icon={faCheck} className="check-icon" />
+                    )}
+                    {atributo}
+                    <span
+                      className="btn-eliminar-personalizado"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        eliminarAtributoPersonalizado(atributo);
+                      }}
+                    >
+                      ×
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {atributosPersonalizados.length === 0 && (
+                <p className="info-text-italic">
+                  💡 Útil para productos sin talla/color como velas, perfumes,
+                  alimentos, etc.
+                </p>
+              )}
             </div>
 
             <div className="form-group">
@@ -856,7 +1244,8 @@ const RegistroProducto = ({ producto, setShow, refetch }) => {
               disabled={
                 !precioBase ||
                 (tallasSeleccionadas.length === 0 &&
-                  coloresSeleccionados.length === 0)
+                  coloresSeleccionados.length === 0 &&
+                  atributosSeleccionados.length === 0)
               }
             >
               <FontAwesomeIcon icon={faMagic} />{" "}

@@ -6,19 +6,19 @@
   background: #f9f9f9;
 
   .pendientes-header {
-    padding: 1.2rem 1.5rem;
-    background: linear-gradient(to right, #11998e, #38ef7d);
-    border-radius: 0.5rem 0.5rem 0 0;
+    padding: 1rem;
+    background: linear-gradient(135deg, #9b7fa8 0%, #8a6d96 100%);
+    border-radius: 12px 12px 0 0;
     color: white;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 2px solid #0d7a6f;
+    border-bottom: 2px solid #8a6d96;
 
     h4 {
       margin: 0;
-      font-size: 1.1rem;
-      font-weight: 700;
+      font-size: 1rem;
+      font-weight: 600;
     }
 
     .count-badge {
@@ -37,7 +37,7 @@
     align-items: center;
     justify-content: center;
     gap: 1rem;
-    color: #11998e;
+    color: #9b7fa8;
 
     p {
       margin: 0;
@@ -83,8 +83,8 @@
       transition: all 0.3s ease;
 
       &:hover {
-        border-color: #11998e;
-        box-shadow: 0 4px 12px rgba(17, 153, 142, 0.15);
+        border-color: #9b7fa8;
+        box-shadow: 0 4px 12px rgba(155, 127, 168, 0.15);
         transform: translateY(-2px);
       }
 
@@ -99,7 +99,7 @@
         .ticket-folio {
           font-weight: 700;
           font-size: 1.1rem;
-          color: #11998e;
+          color: #9b7fa8;
         }
 
         .ticket-total {

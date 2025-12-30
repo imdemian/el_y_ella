@@ -1,17 +1,14 @@
 import React, { useState, useEffect, useCallback, useContext } from "react";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faCalendar,
-  faChartLine,
-  faBan,
-} from "@fortawesome/free-solid-svg-icons";
+import { faCalendar, faChartLine } from "@fortawesome/free-solid-svg-icons";
 import { VentaService } from "../../services/supabase/ventaService";
 import { ReportesService } from "../../utils/reportesService";
 import { AuthContext } from "../../utils/context";
 import HistorialVentas from "./components/HistorialVentas";
 import ComisionesVendedores from "./components/ComisionesVendedores";
 import ResumenTiendas from "./components/ResumenTiendas";
+import DetalleVentaModal from "./components/DetalleVentaModal";
 import "./Historial.scss";
 
 const Historial = () => {
@@ -36,11 +33,6 @@ const Historial = () => {
   const [cargando, setCargando] = useState(false);
   const [ventaSeleccionada, setVentaSeleccionada] = useState(null);
   const [mostrarDetalleModal, setMostrarDetalleModal] = useState(false);
-
-  // Estados para editar vendedor
-  const [editandoVendedor, setEditandoVendedor] = useState(false);
-  const [vendedorSeleccionado, setVendedorSeleccionado] = useState("");
-  const [vendedoresTienda, setVendedoresTienda] = useState([]);
 
   // Estados para KPIs
   const [kpis, setKpis] = useState({
@@ -254,51 +246,14 @@ const Historial = () => {
     }
   };
 
-  // Cargar vendedores de la tienda
-  const cargarVendedoresTienda = async () => {
+  // Callback para cuando se actualiza una venta
+  const handleVentaActualizada = async (ventaId) => {
     try {
-      const { UsuariosService } = await import(
-        "../../services/supabase/usuariosService"
-      );
-      const lista = await UsuariosService.obtenerUsuarios();
-      setVendedoresTienda(lista);
-    } catch (error) {
-      console.error("Error al cargar vendedores:", error);
-      toast.error("Error al cargar vendedores");
-    }
-  };
-
-  // Iniciar edición de vendedor
-  const iniciarEdicionVendedor = async () => {
-    if (!ventaSeleccionada?.tienda_id) return;
-    setVendedorSeleccionado(ventaSeleccionada.usuario_id?.toString() || "");
-    await cargarVendedoresTienda(ventaSeleccionada.tienda_id);
-    setEditandoVendedor(true);
-  };
-
-  // Guardar cambio de vendedor
-  const guardarCambioVendedor = async () => {
-    if (!vendedorSeleccionado) {
-      toast.error("Selecciona un vendedor");
-      return;
-    }
-
-    try {
-      await VentaService.actualizarVendedor(
-        ventaSeleccionada.id,
-        parseInt(vendedorSeleccionado)
-      );
-      toast.success("Vendedor actualizado exitosamente");
-      setEditandoVendedor(false);
-      // Recargar detalle de venta
-      const ventaActualizada = await VentaService.obtenerVentaPorId(
-        ventaSeleccionada.id
-      );
+      const ventaActualizada = await VentaService.obtenerVentaPorId(ventaId);
       setVentaSeleccionada(ventaActualizada);
       cargarVentas(); // Recargar lista
     } catch (error) {
-      console.error("Error al actualizar vendedor:", error);
-      toast.error(error.message || "Error al actualizar vendedor");
+      console.error("Error al recargar venta:", error);
     }
   };
 
@@ -688,235 +643,19 @@ const Historial = () => {
       )}
 
       {/* Modal de Detalle */}
-      {mostrarDetalleModal && ventaSeleccionada && (
-        <div
-          className="modal-overlay"
-          onClick={() => setMostrarDetalleModal(false)}
-        >
-          <div className="modal-detalle" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>
-                Detalle de Venta #
-                {ventaSeleccionada.folio || ventaSeleccionada.id}
-              </h2>
-              <button
-                className="btn-cerrar"
-                onClick={() => setMostrarDetalleModal(false)}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="modal-body">
-              {/* Información General */}
-              <div className="detalle-seccion">
-                <h3>Información General</h3>
-                <div className="detalle-grid">
-                  <div className="detalle-item">
-                    <span className="detalle-label">Fecha:</span>
-                    <span className="detalle-valor">
-                      {formatearFecha(ventaSeleccionada.created_at)}
-                    </span>
-                  </div>
-                  <div className="detalle-item">
-                    <span className="detalle-label">Estado:</span>
-                    <span
-                      className={`badge ${
-                        getBadgeEstado(ventaSeleccionada.estado_venta).clase
-                      }`}
-                    >
-                      {getBadgeEstado(ventaSeleccionada.estado_venta).texto}
-                    </span>
-                  </div>
-                  <div className="detalle-item">
-                    <span className="detalle-label">Tienda:</span>
-                    <span className="detalle-valor">
-                      {ventaSeleccionada.tiendas?.nombre || "N/A"}
-                    </span>
-                  </div>
-                  <div className="detalle-item">
-                    <span className="detalle-label">Usuario ID:</span>
-                    <span className="detalle-valor">
-                      {ventaSeleccionada.usuario_id || "N/A"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Editar Vendedor (solo admin) */}
-              {esAdmin && (
-                <div className="detalle-seccion">
-                  <h3>Vendedor / Comisión</h3>
-                  {editandoVendedor ? (
-                    <div className="editar-vendedor-form">
-                      <div className="form-group">
-                        <label>Asignar comisión a:</label>
-                        <select
-                          value={vendedorSeleccionado}
-                          onChange={(e) =>
-                            setVendedorSeleccionado(e.target.value)
-                          }
-                          className="select-vendedor"
-                        >
-                          <option value="">Seleccionar vendedor...</option>
-                          {vendedoresTienda.map((vendedor) => (
-                            <option key={vendedor.id} value={vendedor.id}>
-                              {vendedor.nombre} {vendedor.apellido} -{" "}
-                              {vendedor.email}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="botones-edicion">
-                        <button
-                          className="btn-guardar"
-                          onClick={guardarCambioVendedor}
-                        >
-                          Guardar
-                        </button>
-                        <button
-                          className="btn-cancelar-edit"
-                          onClick={() => setEditandoVendedor(false)}
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="vendedor-actual">
-                      <p>
-                        <strong>Vendedor actual:</strong> Usuario ID{" "}
-                        {ventaSeleccionada.usuario_id || "N/A"}
-                      </p>
-                      <button
-                        className="btn-editar-vendedor"
-                        onClick={iniciarEdicionVendedor}
-                      >
-                        Cambiar Vendedor
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Información del Cliente */}
-              {ventaSeleccionada.cliente_info && (
-                <div className="detalle-seccion">
-                  <h3>Cliente</h3>
-                  <div className="detalle-grid">
-                    <div className="detalle-item">
-                      <span className="detalle-label">Nombre:</span>
-                      <span className="detalle-valor">
-                        {ventaSeleccionada.cliente_info.nombre}
-                      </span>
-                    </div>
-                    <div className="detalle-item">
-                      <span className="detalle-label">Teléfono:</span>
-                      <span className="detalle-valor">
-                        {ventaSeleccionada.cliente_info.telefono}
-                      </span>
-                    </div>
-                    {ventaSeleccionada.cliente_info.email && (
-                      <div className="detalle-item">
-                        <span className="detalle-label">Email:</span>
-                        <span className="detalle-valor">
-                          {ventaSeleccionada.cliente_info.email}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Productos */}
-              <div className="detalle-seccion">
-                <h3>Productos</h3>
-                <table className="detalle-tabla">
-                  <thead>
-                    <tr>
-                      <th>SKU</th>
-                      <th>Producto</th>
-                      <th>Variante</th>
-                      <th>Precio</th>
-                      <th>Cantidad</th>
-                      <th>Subtotal</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ventaSeleccionada.ventas_items?.map((item, index) => (
-                      <tr key={index}>
-                        <td>{item.variantes_producto?.sku}</td>
-                        <td>{item.variantes_producto?.productos?.nombre}</td>
-                        <td>
-                          {formatearAtributos(
-                            item.variantes_producto?.atributos
-                          )}
-                        </td>
-                        <td>{formatearMoneda(item.precio_unitario)}</td>
-                        <td>{item.cantidad}</td>
-                        <td>{formatearMoneda(item.subtotal_linea)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Totales */}
-              <div className="detalle-seccion">
-                <div className="detalle-totales">
-                  <div className="total-row">
-                    <span>Subtotal:</span>
-                    <span>{formatearMoneda(ventaSeleccionada.subtotal)}</span>
-                  </div>
-                  <div className="total-row">
-                    <span>Descuento:</span>
-                    <span>{formatearMoneda(ventaSeleccionada.descuento)}</span>
-                  </div>
-                  <div className="total-row">
-                    <span>Impuestos:</span>
-                    <span>{formatearMoneda(ventaSeleccionada.impuestos)}</span>
-                  </div>
-                  <div className="total-row total-final">
-                    <span>Total:</span>
-                    <span>{formatearMoneda(ventaSeleccionada.total)}</span>
-                  </div>
-                  <div className="total-row">
-                    <span>Método de Pago:</span>
-                    <span>
-                      {formatearMetodoPago(ventaSeleccionada.metodo_pago)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Notas */}
-              {ventaSeleccionada.notas && (
-                <div className="detalle-seccion">
-                  <h3>Notas</h3>
-                  <p className="detalle-notas">{ventaSeleccionada.notas}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="modal-footer">
-              {esAdmin && ventaSeleccionada.estado_venta !== "cancelada" && (
-                <button
-                  className="btn-modal btn-cancelar-venta"
-                  onClick={() => cancelarVenta(ventaSeleccionada.id)}
-                >
-                  <FontAwesomeIcon icon={faBan} /> Cancelar Venta
-                </button>
-              )}
-              <button
-                className="btn-modal btn-cerrar-modal"
-                onClick={() => setMostrarDetalleModal(false)}
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DetalleVentaModal
+        ventaSeleccionada={ventaSeleccionada}
+        mostrarModal={mostrarDetalleModal}
+        cerrarModal={() => setMostrarDetalleModal(false)}
+        formatearFecha={formatearFecha}
+        formatearMoneda={formatearMoneda}
+        formatearMetodoPago={formatearMetodoPago}
+        getBadgeEstado={getBadgeEstado}
+        formatearAtributos={formatearAtributos}
+        cancelarVenta={cancelarVenta}
+        esAdmin={esAdmin}
+        onVentaActualizada={handleVentaActualizada}
+      />
     </div>
   );
 };

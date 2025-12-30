@@ -6,33 +6,33 @@
   /* ============= ESTADÍSTICAS ============= */
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 2rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
 
     .stat-card {
       background: white;
-      border-radius: 12px;
-      padding: 1.5rem;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      border-radius: 10px;
+      padding: 1rem;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
       display: flex;
       align-items: center;
-      gap: 1.5rem;
+      gap: 1rem;
       transition: transform 0.2s, box-shadow 0.2s;
 
       &:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        transform: translateY(-2px);
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
       }
 
       .stat-icon {
-        width: 60px;
-        height: 60px;
+        width: 50px;
+        height: 50px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.5rem;
+        font-size: 1.25rem;
         background: linear-gradient(135deg, #9b7fa8 0%, #8a6d96 100%);
         color: white;
 
@@ -51,13 +51,13 @@
 
       .stat-content {
         .stat-label {
-          font-size: 0.875rem;
+          font-size: 0.8rem;
           color: #6b7280;
-          margin-bottom: 0.25rem;
+          margin-bottom: 0.2rem;
         }
 
         .stat-value {
-          font-size: 1.875rem;
+          font-size: 1.5rem;
           font-weight: 700;
           color: #1f2937;
         }
@@ -73,7 +73,7 @@
     overflow: hidden;
 
     .inventario-header {
-      padding: 1.5rem;
+      padding: 1.25rem;
       background: linear-gradient(135deg, #9b7fa8 0%, #8a6d96 100%);
       display: flex;
       justify-content: space-between;
@@ -82,26 +82,36 @@
       h1 {
         margin: 0;
         color: white;
-        font-size: 1.75rem;
+        font-size: 1.5rem;
+        font-weight: 600;
         display: flex;
         align-items: center;
-        gap: 0.75rem;
+        gap: 0.5rem;
+
+        svg {
+          font-size: 1.25rem;
+        }
       }
 
       .header-actions {
         display: flex;
-        gap: 1rem;
+        gap: 0.75rem;
 
         .btn {
-          padding: 0.625rem 1.25rem;
+          padding: 0.5rem 1rem;
           border-radius: 8px;
           border: none;
-          font-weight: 600;
+          font-weight: 500;
+          font-size: 0.9rem;
           cursor: pointer;
           display: flex;
           align-items: center;
           gap: 0.5rem;
           transition: all 0.2s;
+
+          svg {
+            font-size: 0.9rem;
+          }
 
           &.btn-primary {
             background: white;
@@ -109,7 +119,7 @@
 
             &:hover {
               background: #f3f4f6;
-              transform: translateY(-2px);
+              transform: translateY(-1px);
             }
           }
 
@@ -120,7 +130,7 @@
 
             &:hover {
               background: rgba(255, 255, 255, 0.3);
-              transform: translateY(-2px);
+              transform: translateY(-1px);
             }
           }
         }

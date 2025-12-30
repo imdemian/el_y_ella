@@ -10,45 +10,52 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1.5rem 2rem;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 1.25rem;
+    background: linear-gradient(135deg, #9b7fa8 0%, #8a6d96 100%);
     color: white;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(155, 127, 168, 0.15);
 
     .header-left {
       h2 {
         margin: 0;
-        font-size: 1.8rem;
-        font-weight: 700;
+        font-size: 1.5rem;
+        font-weight: 600;
         display: flex;
         align-items: center;
         gap: 0.5rem;
+
+        svg {
+          font-size: 1.25rem;
+        }
       }
 
       .subtitle {
-        margin: 0.3rem 0 0 0;
-        font-size: 0.95rem;
-        opacity: 0.9;
+        display: none;
       }
     }
 
     .header-right {
       .btn-mis-tickets {
-        padding: 0.7rem 1.5rem;
+        padding: 0.5rem 1rem;
         background: rgba(255, 255, 255, 0.2);
         border: 2px solid rgba(255, 255, 255, 0.3);
         color: white;
         border-radius: 8px;
-        font-weight: 600;
+        font-weight: 500;
+        font-size: 0.9rem;
         cursor: pointer;
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
         display: flex;
         align-items: center;
         gap: 0.5rem;
 
         &:hover {
           background: rgba(255, 255, 255, 0.3);
-          transform: translateY(-2px);
+          transform: translateY(-1px);
+        }
+
+        svg {
+          font-size: 0.9rem;
         }
       }
     }
@@ -80,7 +87,7 @@
 
         .barcode-icon {
           font-size: 1.5rem;
-          color: #667eea;
+          color: #9b7fa8;
         }
 
         .input-busqueda {
@@ -93,8 +100,8 @@
 
           &:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: #9b7fa8;
+            box-shadow: 0 0 0 3px rgba(155, 127, 168, 0.1);
           }
         }
       }
@@ -115,7 +122,7 @@
           border-bottom: 1px solid #efefef;
 
           &:hover {
-            background: #667eea;
+            background: #9b7fa8;
             color: white;
 
             .resultado-sku {
@@ -192,8 +199,8 @@
           transition: all 0.3s ease;
 
           &:hover {
-            border-color: #667eea;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+            border-color: #9b7fa8;
+            box-shadow: 0 4px 12px rgba(155, 127, 168, 0.1);
           }
 
           .item-principal {
@@ -233,7 +240,7 @@
             .item-precio-unitario {
               font-weight: 700;
               font-size: 1.1rem;
-              color: #667eea;
+              color: #9b7fa8;
             }
           }
 
@@ -252,7 +259,7 @@
               border: 2px solid #e0e0e0;
 
               .btn-cantidad {
-                background: #667eea;
+                background: #9b7fa8;
                 color: white;
                 border: none;
                 width: 30px;
@@ -324,7 +331,7 @@
 
           &:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #9b7fa8;
           }
         }
 
@@ -354,8 +361,8 @@
 
               &:focus {
                 outline: none;
-                border-color: #667eea;
-                box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+                border-color: #9b7fa8;
+                box-shadow: 0 0 0 3px rgba(155, 127, 168, 0.1);
               }
             }
           }
@@ -377,13 +384,13 @@
 
             &:focus {
               outline: none;
-              border-color: #667eea;
+              border-color: #9b7fa8;
             }
           }
 
           .btn-aplicar-descuento {
             padding: 0.8rem 1.5rem;
-            background: #667eea;
+            background: #9b7fa8;
             color: white;
             border: none;
             border-radius: 8px;
@@ -491,7 +498,7 @@
               font-weight: 700;
 
               .resumen-valor {
-                color: #667eea;
+                color: #9b7fa8;
               }
             }
 
@@ -520,7 +527,7 @@
 
           &:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #9b7fa8;
           }
         }
       }
@@ -528,7 +535,7 @@
       .btn-generar-ticket {
         width: 100%;
         padding: 1.2rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #9b7fa8 0%, #8a6d96 100%);
         color: white;
         border: none;
         border-radius: 12px;
@@ -540,7 +547,7 @@
         align-items: center;
         justify-content: center;
         gap: 0.8rem;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 4px 15px rgba(155, 127, 168, 0.3);
 
         &:hover:not(:disabled) {
           transform: translateY(-2px);

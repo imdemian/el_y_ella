@@ -10,26 +10,28 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1.5rem 2rem;
-    border-radius: 0.5rem;
-    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    padding: 1.25rem;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #9b7fa8 0%, #8a6d96 100%);
     color: white;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(155, 127, 168, 0.15);
 
     .header-left {
       h2 {
         margin: 0;
-        font-size: 1.8rem;
-        font-weight: 700;
+        font-size: 1.5rem;
+        font-weight: 600;
         display: flex;
         align-items: center;
         gap: 0.5rem;
+
+        svg {
+          font-size: 1.25rem;
+        }
       }
 
       .subtitle {
-        margin: 0.3rem 0 0 0;
-        font-size: 0.95rem;
-        opacity: 0.9;
+        display: none;
       }
     }
 
@@ -39,49 +41,54 @@
       gap: 1rem;
 
       .select-tienda {
-        padding: 0.7rem 1.2rem;
+        padding: 0.5rem 1rem;
         background: rgba(255, 255, 255, 0.95);
         border: 2px solid rgba(255, 255, 255, 0.3);
-        color: #11998e;
+        color: #9b7fa8;
         border-radius: 8px;
-        font-weight: 600;
-        font-size: 0.95rem;
+        font-weight: 500;
+        font-size: 0.9rem;
         cursor: pointer;
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
         outline: none;
 
         &:hover {
           background: white;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
         }
 
         &:focus {
           border-color: white;
-          box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+          box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
         }
       }
 
       .btn-refresh {
-        padding: 0.7rem 1.5rem;
+        padding: 0.5rem 1rem;
         background: rgba(255, 255, 255, 0.2);
         border: 2px solid rgba(255, 255, 255, 0.3);
         color: white;
         border-radius: 8px;
-        font-weight: 600;
+        font-weight: 500;
+        font-size: 0.9rem;
         cursor: pointer;
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
         display: flex;
         align-items: center;
         gap: 0.5rem;
 
         &:hover:not(:disabled) {
           background: rgba(255, 255, 255, 0.3);
-          transform: translateY(-2px);
+          transform: translateY(-1px);
         }
 
         &:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+
+        svg {
+          font-size: 0.9rem;
         }
       }
     }
@@ -113,7 +120,7 @@
         border-bottom: 2px solid #f0f0f0;
 
         svg {
-          color: #11998e;
+          color: #9b7fa8;
           margin-bottom: 1rem;
         }
 
@@ -132,7 +139,7 @@
           .input-folio-grande {
             flex: 1;
             padding: 1rem 1.5rem;
-            border: 3px solid #11998e;
+            border: 3px solid #9b7fa8;
             border-radius: 10px;
             font-size: 1.2rem;
             text-align: center;
@@ -141,14 +148,14 @@
 
             &:focus {
               outline: none;
-              border-color: #0d7a6f;
-              box-shadow: 0 0 0 4px rgba(17, 153, 142, 0.1);
+              border-color: #8a6d96;
+              box-shadow: 0 0 0 4px rgba(155, 127, 168, 0.1);
             }
           }
 
           .btn-buscar {
             padding: 1rem 2rem;
-            background: #11998e;
+            background: #9b7fa8;
             color: white;
             border: none;
             border-radius: 10px;
@@ -157,7 +164,7 @@
             transition: all 0.3s ease;
 
             &:hover:not(:disabled) {
-              background: #0d7a6f;
+              background: #8a6d96;
               transform: translateY(-2px);
             }
 
@@ -187,7 +194,7 @@
           h3 {
             margin: 0;
             font-size: 1.5rem;
-            color: #11998e;
+            color: #9b7fa8;
           }
 
           .btn-limpiar {
@@ -293,7 +300,7 @@
                 border-radius: 6px;
                 font-weight: 700;
                 font-size: 1rem;
-                color: #11998e;
+                color: #9b7fa8;
               }
 
               .item-precio {
@@ -328,7 +335,7 @@
           justify-content: space-between;
           align-items: center;
           padding: 1.5rem;
-          background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+          background: linear-gradient(135deg, #9b7fa8 0%, #8a6d96 100%);
           color: white;
           border-radius: 10px;
           font-size: 1.2rem;
@@ -385,13 +392,13 @@
             }
 
             &:hover {
-              border-color: #11998e;
+              border-color: #9b7fa8;
               transform: translateY(-2px);
             }
 
             &.active {
-              background: #11998e;
-              border-color: #11998e;
+              background: #9b7fa8;
+              border-color: #9b7fa8;
               color: white;
             }
           }
@@ -409,7 +416,7 @@
 
           .input-monto-grande {
             padding: 1.2rem;
-            border: 3px solid #11998e;
+            border: 3px solid #9b7fa8;
             border-radius: 10px;
             font-size: 1.5rem;
             font-weight: 700;
@@ -418,8 +425,8 @@
 
             &:focus {
               outline: none;
-              border-color: #0d7a6f;
-              box-shadow: 0 0 0 4px rgba(17, 153, 142, 0.1);
+              border-color: #8a6d96;
+              box-shadow: 0 0 0 4px rgba(155, 127, 168, 0.1);
             }
           }
 
@@ -443,7 +450,7 @@
       .btn-cobrar-ticket {
         width: 100%;
         padding: 1.5rem;
-        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        background: linear-gradient(135deg, #9b7fa8 0%, #8a6d96 100%);
         color: white;
         border: none;
         border-radius: 12px;
