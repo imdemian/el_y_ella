@@ -45,6 +45,31 @@ router.post("/", async (req, res) => {
         .json({ message: "El método de pago es requerido" });
     }
 
+    // Separar items en registrados (con variante_id) y extras (sin variante_id)
+    const itemsRegistrados = items.filter(
+      (item) => !item.es_producto_extra && item.variante_id
+    );
+    const itemsExtras = items.filter((item) => item.es_producto_extra === true);
+
+    console.log(
+      `📊 Items: ${itemsRegistrados.length} registrados, ${itemsExtras.length} extras`
+    );
+
+    // Validar que productos extras tengan los campos requeridos
+    for (const item of itemsExtras) {
+      if (!item.nombre_extra || !item.precio_unitario || !item.cantidad) {
+        return res.status(400).json({
+          message:
+            "Los productos extras deben incluir: nombre_extra, precio_unitario y cantidad",
+        });
+      }
+
+      // Calcular subtotal_linea si no viene
+      if (!item.subtotal_linea) {
+        item.subtotal_linea = item.precio_unitario * item.cantidad;
+      }
+    }
+
     // Determinar la tienda para la venta
     let tienda_venta = null;
 
@@ -88,69 +113,89 @@ router.post("/", async (req, res) => {
       typeof tienda_venta
     );
 
-    // Verificar que la tienda especificada tenga stock suficiente
-    const variantes_ids = items.map((item) => item.variante_id);
+    // ========================================================================
+    // VALIDAR INVENTARIO SOLO PARA PRODUCTOS REGISTRADOS
+    // ========================================================================
+    // Productos extras NO requieren validación de inventario
 
-    // Primero verificar inventario global
-    const { data: variantesGlobal, error: errorGlobal } = await supabase
-      .from("variantes_producto")
-      .select("id, sku, inventario_global(cantidad_disponible)")
-      .in("id", variantes_ids);
-
-    if (errorGlobal) {
-      console.error("Error al verificar stock global:", errorGlobal);
-      return res.status(500).json({ message: "Error al verificar stock" });
-    }
-
-    // Validar stock global
-    for (const item of items) {
-      const variante = variantesGlobal.find((v) => v.id === item.variante_id);
-      if (!variante) {
-        return res.status(404).json({
-          message: `Variante ${item.variante_id} no encontrada`,
-        });
-      }
-
-      const stockGlobal = variante.inventario_global?.cantidad_disponible || 0;
-      if (stockGlobal < item.cantidad) {
-        return res.status(400).json({
-          message: `Stock insuficiente para SKU ${variante.sku}. Disponible: ${stockGlobal}, Solicitado: ${item.cantidad}`,
-        });
-      }
-    }
-
-    // Ahora verificar stock en la tienda específica
-    const { data: variantesTienda, error: errorTienda } = await supabase
-      .from("inventario_tiendas")
-      .select("variante_id, cantidad_disponible")
-      .in("variante_id", variantes_ids)
-      .eq("tienda_id", tienda_venta);
-
-    if (errorTienda) {
-      console.error("Error al verificar stock de tienda:", errorTienda);
-      return res
-        .status(500)
-        .json({ message: "Error al verificar stock de tienda" });
-    }
-
-    // Validar stock en tienda
-    for (const item of items) {
-      const inventarioTienda = variantesTienda.find(
-        (v) => v.variante_id === item.variante_id
+    if (itemsRegistrados.length === 0) {
+      console.log(
+        "⚠️ Solo hay productos extras, saltando validación de inventario"
       );
-      const variante = variantesGlobal.find((v) => v.id === item.variante_id);
+      // Si solo hay productos extras, saltar directamente a crear la venta
+    } else {
+      console.log(
+        `🔍 Validando inventario para ${itemsRegistrados.length} productos registrados`
+      );
+    }
 
-      if (!inventarioTienda) {
-        return res.status(400).json({
-          message: `El producto ${variante.sku} no tiene inventario registrado en esta tienda`,
-        });
+    // Verificar que la tienda especificada tenga stock suficiente (solo productos registrados)
+    const variantes_ids = itemsRegistrados.map((item) => item.variante_id);
+
+    // Validar inventario solo si hay productos registrados
+    if (itemsRegistrados.length > 0) {
+      // Primero verificar inventario global
+      const { data: variantesGlobal, error: errorGlobal } = await supabase
+        .from("variantes_producto")
+        .select("id, sku, inventario_global(cantidad_disponible)")
+        .in("id", variantes_ids);
+
+      if (errorGlobal) {
+        console.error("Error al verificar stock global:", errorGlobal);
+        return res.status(500).json({ message: "Error al verificar stock" });
       }
 
-      const stockTienda = inventarioTienda.cantidad_disponible || 0;
-      if (stockTienda < item.cantidad) {
-        return res.status(400).json({
-          message: `Stock insuficiente en esta tienda para SKU ${variante.sku}. Disponible en tienda: ${stockTienda}, Solicitado: ${item.cantidad}`,
-        });
+      // Validar stock global (solo items registrados)
+      for (const item of itemsRegistrados) {
+        const variante = variantesGlobal.find((v) => v.id === item.variante_id);
+        if (!variante) {
+          return res.status(404).json({
+            message: `Variante ${item.variante_id} no encontrada`,
+          });
+        }
+
+        const stockGlobal =
+          variante.inventario_global?.cantidad_disponible || 0;
+        if (stockGlobal < item.cantidad) {
+          return res.status(400).json({
+            message: `Stock insuficiente para SKU ${variante.sku}. Disponible: ${stockGlobal}, Solicitado: ${item.cantidad}`,
+          });
+        }
+      }
+
+      // Ahora verificar stock en la tienda específica
+      const { data: variantesTienda, error: errorTienda } = await supabase
+        .from("inventario_tiendas")
+        .select("variante_id, cantidad_disponible")
+        .in("variante_id", variantes_ids)
+        .eq("tienda_id", tienda_venta);
+
+      if (errorTienda) {
+        console.error("Error al verificar stock de tienda:", errorTienda);
+        return res
+          .status(500)
+          .json({ message: "Error al verificar stock de tienda" });
+      }
+
+      // Validar stock en tienda (solo items registrados)
+      for (const item of itemsRegistrados) {
+        const inventarioTienda = variantesTienda.find(
+          (v) => v.variante_id === item.variante_id
+        );
+        const variante = variantesGlobal.find((v) => v.id === item.variante_id);
+
+        if (!inventarioTienda) {
+          return res.status(400).json({
+            message: `El producto ${variante.sku} no tiene inventario registrado en esta tienda`,
+          });
+        }
+
+        const stockTienda = inventarioTienda.cantidad_disponible || 0;
+        if (stockTienda < item.cantidad) {
+          return res.status(400).json({
+            message: `Stock insuficiente en esta tienda para SKU ${variante.sku}. Disponible en tienda: ${stockTienda}, Solicitado: ${item.cantidad}`,
+          });
+        }
       }
     }
 
@@ -430,6 +475,9 @@ router.get("/pendientes", async (req, res) => {
           cantidad,
           precio_unitario,
           subtotal_linea,
+          es_producto_extra,
+          nombre_producto_extra,
+          descripcion_extra,
           variantes_producto(sku, productos(nombre))
         )
       `
@@ -582,8 +630,28 @@ router.put("/:id/cancelar", async (req, res) => {
       return res.status(500).json({ message: "Error al cancelar la venta" });
     }
 
-    // Restaurar inventario en la tienda y en global
+    // Restaurar inventario en la tienda y en global (SOLO PRODUCTOS NORMALES)
     for (const item of venta.ventas_items) {
+      // Verificar si es producto extra
+      const esProductoExtra = item.es_producto_extra || false;
+
+      if (esProductoExtra) {
+        console.log(
+          `🆕 Item es producto extra: ${item.nombre_producto_extra} - NO se restaura inventario`
+        );
+        continue; // Saltar productos extras
+      }
+
+      // Solo procesar productos normales (con variante_id)
+      if (!item.variante_id) {
+        console.log("⚠️ Item sin variante_id, saltando...");
+        continue;
+      }
+
+      console.log(
+        `📦 Restaurando inventario para variante: ${item.variante_id}`
+      );
+
       // Restaurar en inventario_tiendas
       const { data: invTienda } = await supabase
         .from("inventario_tiendas")
